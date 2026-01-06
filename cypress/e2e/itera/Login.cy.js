@@ -2,7 +2,7 @@ Cypress.on('uncaught:exception',(err,runnable) =>
 {
     return false
 })
-describe('Login Itera', () => {
+describe('Login', () => {
 
 //Success Login
     it('Success Login', () => {
