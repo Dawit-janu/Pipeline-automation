@@ -22,8 +22,11 @@ jobs:
       - name: Install dependencies
         run: npm install
 
+      - name: Install Cypress binary
+        run: npx cypress install
+
       - name: Run Cypress tests
-        run: npm run test
+        run: npx cypress run
 
       - name: Upload Cypress Report
         if: always()
