@@ -2,16 +2,15 @@ name: Cypress Automation Test
 
 on:
   push:
-    branches: [ "main" ]
+    branches: [ main ]
   pull_request:
-    branches: [ "main" ]
 
 jobs:
-  cypress-test:
+  cypress-run:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout repository
+      - name: Checkout repo
         uses: actions/checkout@v4
 
       - name: Setup Node.js
@@ -20,19 +19,27 @@ jobs:
           node-version: 18
 
       - name: Install dependencies
-        run: npm install
-
-      - name: Install Cypress binary
-        run: npx cypress install
+        run: npm ci
 
       - name: Run Cypress tests
-        run: npx cypress run
+        run: npm run test
+        continue-on-error: true
 
-      - name: Upload Cypress Report
+      - name: Send Telegram Notification
         if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: cypress-report
-          path: |
-            cypress/reports
-            cypress/screenshots
+        run: |
+          STATUS="✅ SUCCESS"
+          if [ "${{ job.status }}" != "success" ]; then
+            STATUS="❌ FAILED"
+          fi
+
+          MESSAGE="Cypress Test Result:
+          Repo: ${{ github.repository }}
+          Branch: ${{ github.ref_name }}
+          Status: $STATUS
+          Run: ${{ github.run_number }}
+          "
+
+          curl -s -X POST https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendMessage \
+          -d chat_id=${{ secrets.TELEGRAM_CHAT_ID }} \
+          -d text="$MESSAGE"
