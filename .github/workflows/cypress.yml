@@ -1,4 +1,4 @@
-name: Cypress Automation Test
+name: Cypress Automation Test (Docker)
 
 on:
   push:
@@ -6,26 +6,18 @@ on:
   pull_request:
 
 jobs:
-  cypress-run:
+  cypress-docker:
     runs-on: ubuntu-latest
 
     steps:
       - name: Checkout repo
         uses: actions/checkout@v4
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: 18
+      - name: Build Docker image
+        run: docker build -t cypress-test .
 
-      - name: Install dependencies
-        run: npm ci
-
-      - name: Run Cypress tests
-        id: cypress
-        run: |
-          npm run test || echo "CYPRESS_FAILED=true" >> $GITHUB_ENV
-
+      - name: Run Cypress tests (Docker)
+        run: docker run --rm cypress-test || echo "CYPRESS_FAILED=true" >> $GITHUB_ENV
 
       - name: Send Telegram Notification
         if: always()
@@ -40,7 +32,7 @@ jobs:
             STATUS="✅ SUCCESS"
           fi
 
-          MESSAGE="Cypress Test Result:
+          MESSAGE="Cypress Test Result (Docker):
           Repo: ${{ github.repository }}
           Branch: ${{ github.ref_name }}
           Status: $STATUS
