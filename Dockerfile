@@ -1,4 +1,4 @@
-FROM cypress/included:13.6.6
+FROM cypress/base:18.16.0
 
 WORKDIR /app
 
@@ -7,5 +7,6 @@ RUN npm ci
 
 COPY . .
 
-# INI PALING PENTING
+RUN mkdir -p /app/results
+
 CMD ["npm", "run", "test"]
