@@ -18,17 +18,34 @@ jobs:
 
       - name: Run Cypress tests (Docker)
         run: |
-            mkdir -p results
-            docker run --rm \
+          mkdir -p results
+          docker run --rm \
             -v ${{ github.workspace }}/results:/app/results \
             cypress-test || echo "CYPRESS_FAILED=true" >> $GITHUB_ENV
+
+      # ✅ STEP 6.3 — HARUS DI SINI
+      - name: Extract failed tests
+        if: always()
+        run: |
+          if [ -f results/results.json ]; then
+            FAILED_TEST_DETAILS=$(jq -r '
+              .tests[] | select(.state=="failed") |
+              "- " + .title
+            ' results/results.json)
+          else
+            FAILED_TEST_DETAILS="No results.json found"
+          fi
+
+          echo "FAILED_TEST_DETAILS<<EOF" >> $GITHUB_ENV
+          echo "$FAILED_TEST_DETAILS" >> $GITHUB_ENV
+          echo "EOF" >> $GITHUB_ENV
 
       - name: Send Telegram Notification
         if: always()
         run: |
           TOTAL_TESTS=23
-          FAILED_TESTS=3
-          PASSED_TESTS=$((TOTAL_TESTS - FAILED_TESTS))
+          FAILED_COUNT=3
+          PASSED_TESTS=$((TOTAL_TESTS - FAILED_COUNT))
 
           if [ "$CYPRESS_FAILED" = "true" ]; then
             STATUS="❌ FAILED"
@@ -42,27 +59,14 @@ jobs:
           Status: $STATUS
           Total Tests: $TOTAL_TESTS
           Passed Tests: $PASSED_TESTS
-          Failed Tests: $FAILED_TESTS
+          Failed Tests: $FAILED_COUNT
+
+          Failed Test Details:
+          $FAILED_TEST_DETAILS
+
           Run: ${{ github.run_number }}
           "
 
           curl -s -X POST https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendMessage \
-          -d chat_id=${{ secrets.TELEGRAM_CHAT_ID }} \
-          -d text="$MESSAGE"
-
-      - name: Extract failed tests
-        if: always()
-        run: |
-          if [ -f results/results.json ]; then
-            FAILED_TESTS=$(jq -r '
-            .tests[] | select(.state=="failed") |
-            "- " + .title
-            ' results/results.json)
-          else
-            FAILED_TESTS="No results.json found"
-          fi
-
-            echo "FAILED_TESTS<<EOF" >> $GITHUB_ENV
-            echo "$FAILED_TESTS" >> $GITHUB_ENV
-            echo "EOF" >> $GITHUB_ENV
-
+            -d chat_id=${{ secrets.TELEGRAM_CHAT_ID }} \
+            -d text="$MESSAGE"
