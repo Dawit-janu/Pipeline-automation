@@ -4,8 +4,8 @@
   "description": " cypress automation",
   "main": "index.js",
   "scripts": {
-    "test": "cypress run"
-  },
+  "test": "cypress run --reporter json --reporter-options output=/app/results/results.json"
+},
   "author": "Dawits",
   "license": "ISC",
   "devDependencies": {
