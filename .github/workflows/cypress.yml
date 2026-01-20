@@ -20,8 +20,14 @@ jobs:
         run: |
           mkdir -p results
           docker run --rm \
-            -v ${{ github.workspace }}/results:/app/results \
-            cypress-test || echo "CYPRESS_FAILED=true" >> $GITHUB_ENV
+          -v ${{ github.workspace }}:/app \
+          -w /app \
+          cypress/included:13.6.6 \
+          cypress run \
+          --reporter json \
+          --reporter-options output=/app/results/results.json \
+          || echo "CYPRESS_FAILED=true" >> $GITHUB_ENV
+
 
       - name: Debug results folder
         if: always()
