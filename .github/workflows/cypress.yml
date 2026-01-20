@@ -23,6 +23,13 @@ jobs:
             -v ${{ github.workspace }}/results:/app/results \
             cypress-test || echo "CYPRESS_FAILED=true" >> $GITHUB_ENV
 
+      - name: Debug results folder
+        if: always()
+        run: |
+          echo "=== results folder ==="
+          ls -lah results || true
+
+
       # ✅ STEP 6.3 — HARUS DI SINI
       - name: Extract failed tests
         if: always()
