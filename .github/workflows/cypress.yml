@@ -33,7 +33,7 @@ jobs:
               npm install &&
               npx cypress run \
                 --reporter mochawesome \
-                --reporter-options reportDir=results,overwrite=false,html=false,json=true
+                --reporter-options reportDir=results,overwrite=false,html=false,json=true,quiet=true
             " \
             || echo "CYPRESS_FAILED=true" >> $GITHUB_ENV
 
@@ -47,7 +47,17 @@ jobs:
       - name: Merge mochawesome reports
         if: always()
         run: |
-          npx mochawesome-merge results/*.json > results/mochawesome.json
+          echo "Filtering valid mochawesome JSON files..."
+
+          VALID_FILES=$(for f in results/*.json; do
+           if [ -s "$f" ]; then
+            echo $f
+          fi
+          done)
+          echo "Files to merge:"
+          echo "$VALID_FILES"
+          npx mochawesome-merge $VALID_FILES > results/mochawesome.json
+
 
       # ✅ EXTRACT SUMMARY (AUTO COUNT)
       - name: Extract test summary
