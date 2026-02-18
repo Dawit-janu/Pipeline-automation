@@ -152,6 +152,8 @@ jobs:
           RUN_URL="https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}"
 
           jq -n \
+            --arg runNumber "${{ github.run_number }}" \
+            --arg runAttempt "${{ github.run_attempt }}" \
             --arg repo "${{ github.repository }}" \
             --arg branch "${{ github.ref_name }}" \
             --arg status "$STATUS" \
@@ -169,6 +171,7 @@ jobs:
                 url: $url,
                 color: $color,
                 fields: [
+                  {name: "Test Run", value : ("#"+ runNumber + " (Attempt "+ $runAttempt + ")"), inline: true},
                   {name: "Repository", value: $repo, inline: true},
                   {name: "Branch", value: $branch, inline: true},
                   {name: "Status", value: ($icon + " " + $status), inline: true},
