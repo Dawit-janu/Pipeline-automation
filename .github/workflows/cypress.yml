@@ -92,12 +92,12 @@ jobs:
       - name: Extract failed tests
         if: always()
         run: |
-          if ls results/*.json 1> /dev/null 2>&1; then
+          if [ -f results/mochawesome.json ]; then
             FAILED_TEST_DETAILS=$(jq -r '
               .results[].suites[].tests[]
               | select(.fail == true)
               | "- " + .fullTitle
-            ' results/*.json)
+            ' results/mochawesome.json)
           else
             FAILED_TEST_DETAILS="None"
           fi
@@ -105,7 +105,6 @@ jobs:
           echo "FAILED_TEST_DETAILS<<EOF" >> $GITHUB_ENV
           echo "$FAILED_TEST_DETAILS" >> $GITHUB_ENV
           echo "EOF" >> $GITHUB_ENV
-
 
       # - name: Send Telegram Notification
       #   if: always()
