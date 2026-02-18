@@ -93,7 +93,7 @@ jobs:
             STATUS="✅ SUCCESS"
           fi
 
-          MESSAGE="**Cypress Test Result (Docker)**
+          MESSAGE="Cypress Test Result (Docker)
           Repo: ${{ github.repository }}
           Branch: ${{ github.ref_name }}
           Status: $STATUS
@@ -102,7 +102,8 @@ jobs:
           Failed Tests: $FAILED_TESTS
           Run: ${{ github.run_number }}"
 
-          curl -H "Content-Type: application/json" \
-            -X POST \
-            -d "{\"content\":\"$MESSAGE\"}" \
-            ${{ secrets.DISCORD_WEBHOOK }}
+          jq -n --arg content "$MESSAGE" '{content:$content}' \
+          | curl -H "Content-Type: application/json" \
+              -X POST \
+              -d @- \
+              ${{ secrets.DISCORD_WEBHOOK }}
