@@ -58,35 +58,28 @@ jobs:
         if: always()
         run: |
           if [ -f results/mochawesome.json ]; then
-
-            TOTAL_TESTS=$(jq '
-              .stats.tests //
-              .results[0].stats.tests //
-              0
-            ' results/mochawesome.json)
-
-            FAILED_TESTS=$(jq '
-              .stats.failures //
-              .results[0].stats.failures //
-              0
-            ' results/mochawesome.json)
-
-            PASSED_TESTS=$(jq '
-              .stats.passes //
-              .results[0].stats.passes //
-              0
-            ' results/mochawesome.json)
-
+            TOTAL_TESTS=$(jq '.stats.tests' results/mochawesome.json)
+            FAILED_TESTS=$(jq '.stats.failures' results/mochawesome.json)
+            PASSED_TESTS=$(jq '.stats.passes' results/mochawesome.json)
+            DURATION_MS=$(jq '.stats.duration' results/mochawesome.json)
           else
             TOTAL_TESTS=0
             FAILED_TESTS=0
             PASSED_TESTS=0
+            DURATION_MS=0
           fi
 
-          echo "TOTAL_TESTS=$TOTAL_TESTS" >> $GITHUB_ENV
-          echo "FAILED_TESTS=$FAILED_TESTS" >> $GITHUB_ENV
-          echo "PASSED_TESTS=$PASSED_TESTS" >> $GITHUB_ENV
+            # ✅ convert ms → mm:ss
+            DURATION_SEC=$((DURATION_MS / 1000))
+            MINUTES=$((DURATION_SEC / 60))
+            SECONDS=$((DURATION_SEC % 60))
 
+            DURATION_FORMATTED="${MINUTES}m ${SECONDS}s"
+
+            echo "TOTAL_TESTS=$TOTAL_TESTS" >> $GITHUB_ENV
+            echo "FAILED_TESTS=$FAILED_TESTS" >> $GITHUB_ENV
+            echo "PASSED_TESTS=$PASSED_TESTS" >> $GITHUB_ENV
+            echo "TEST_DURATION=$DURATION_FORMATTED" >> $GITHUB_ENV
 
       # ✅ EXTRACT FAILED TEST LIST (FIXED QUERY)
       - name: Extract failed tests
@@ -160,6 +153,7 @@ jobs:
             --arg total "$TOTAL_TESTS" \
             --arg passed "$PASSED_TESTS" \
             --arg failed "$FAILED_TESTS" \
+            --arg duration "$TEST_DURATION" \
             --arg url "$RUN_URL" \
             --arg icon "$ICON" \
             --arg failedDetails "$FAILED_TEST_DETAILS" \
@@ -178,6 +172,7 @@ jobs:
                   {name: "Total Tests", value: $total, inline: true},
                   {name: "Passed", value: $passed, inline: true},
                   {name: "Failed", value: $failed, inline: true},
+                  {name: "Duration", value: ("⏱ " + $duration), inline: true},
                   {
                     name: "❗ Failed Tests",
                     value: ($failedDetails | if . == "" then "None" else . end)
