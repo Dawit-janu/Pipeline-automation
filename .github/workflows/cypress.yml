@@ -43,6 +43,11 @@ jobs:
         run: |
           echo "=== results folder ==="
           ls -lah results || true
+      
+      - name: Merge mochawesome reports
+        if: always()
+        run: |
+          npx mochawesome-merge results/*.json > results/mochawesome.json
 
       # ✅ EXTRACT SUMMARY (AUTO COUNT)
       - name: Extract test summary
