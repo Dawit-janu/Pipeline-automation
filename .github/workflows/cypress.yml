@@ -80,7 +80,7 @@ jobs:
       #     -d chat_id=${{ secrets.TELEGRAM_CHAT_ID }} \
       #     -d text="$MESSAGE"
 
-      - name: Send Discord Notification
+      - name: Send Discord Embed Notification
         if: always()
         run: |
           TOTAL_TESTS=23
@@ -88,22 +88,51 @@ jobs:
           PASSED_TESTS=$((TOTAL_TESTS - FAILED_TESTS))
 
           if [ "$CYPRESS_FAILED" = "true" ]; then
-            STATUS="❌ FAILED"
+            STATUS="FAILED"
+            COLOR=15158332   # 🔴 red
+            ICON="❌"
           else
-            STATUS="✅ SUCCESS"
+            STATUS="SUCCESS"
+            COLOR=3066993    # 🟢 green
+            ICON="✅"
           fi
 
-          MESSAGE="Cypress Test Result (Docker)
-          Repo: ${{ github.repository }}
-          Branch: ${{ github.ref_name }}
-          Status: $STATUS
-          Total Tests: $TOTAL_TESTS
-          Passed Tests: $PASSED_TESTS
-          Failed Tests: $FAILED_TESTS
-          Run: ${{ github.run_number }}"
+          RUN_URL="https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}"
 
-          jq -n --arg content "$MESSAGE" '{content:$content}' \
-          | curl -H "Content-Type: application/json" \
-              -X POST \
-              -d @- \
-              ${{ secrets.DISCORD_WEBHOOK }}
+          jq -n \
+            --arg repo "${{ github.repository }}" \
+            --arg branch "${{ github.ref_name }}" \
+            --arg status "$STATUS" \
+            --arg total "$TOTAL_TESTS" \
+            --arg passed "$PASSED_TESTS" \
+            --arg failed "$FAILED_TESTS" \
+            --arg run "${{ github.run_number }}" \
+            --arg url "$RUN_URL" \
+            --arg icon "$ICON" \
+            --argjson color $COLOR \
+          '{
+            embeds: [
+              {
+                title: "🧪 Cypress Automation Report",
+                color: $color,
+                fields: [
+                  {name: "Repository", value: $repo, inline: true},
+                  {name: "Branch", value: $branch, inline: true},
+                  {name: "Status", value: ($icon + " " + $status), inline: true},
+                  {name: "Total Tests", value: $total, inline: true},
+                  {name: "Passed", value: $passed, inline: true},
+                  {name: "Failed", value: $failed, inline: true},
+                  {name: "Run Number", value: ("#" + $run), inline: true}
+                ],
+                url: $url,
+                footer: {
+                  text: "GitHub Actions • Cypress Automation"
+                },
+                timestamp: now | todate
+              }
+            ]
+          }' \
+              | curl -H "Content-Type: application/json" \
+                  -X POST \
+                  -d @- \
+                  ${{ secrets.DISCORD_WEBHOOK }}
