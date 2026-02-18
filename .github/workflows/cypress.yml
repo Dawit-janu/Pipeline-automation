@@ -53,9 +53,25 @@ jobs:
         if: always()
         run: |
           if [ -f results/mochawesome.json ]; then
-            TOTAL_TESTS=$(jq '.stats.tests' results/mochawesome.json)
-            FAILED_TESTS=$(jq '.stats.failures' results/mochawesome.json)
-            PASSED_TESTS=$(jq '.stats.passes' results/mochawesome.json)
+
+            TOTAL_TESTS=$(jq '
+              .stats.tests //
+              .results[0].stats.tests //
+              0
+            ' results/mochawesome.json)
+
+            FAILED_TESTS=$(jq '
+              .stats.failures //
+              .results[0].stats.failures //
+              0
+            ' results/mochawesome.json)
+
+            PASSED_TESTS=$(jq '
+              .stats.passes //
+              .results[0].stats.passes //
+              0
+            ' results/mochawesome.json)
+
           else
             TOTAL_TESTS=0
             FAILED_TESTS=0
@@ -65,6 +81,7 @@ jobs:
           echo "TOTAL_TESTS=$TOTAL_TESTS" >> $GITHUB_ENV
           echo "FAILED_TESTS=$FAILED_TESTS" >> $GITHUB_ENV
           echo "PASSED_TESTS=$PASSED_TESTS" >> $GITHUB_ENV
+
 
       # ✅ EXTRACT FAILED TEST LIST (FIXED QUERY)
       - name: Extract failed tests
