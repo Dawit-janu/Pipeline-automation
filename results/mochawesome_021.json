@@ -1,0 +1,178 @@
+{
+  "stats": {
+    "suites": 1,
+    "tests": 4,
+    "passes": 0,
+    "pending": 0,
+    "failures": 4,
+    "start": "2026-02-18T04:17:49.323Z",
+    "end": "2026-02-18T04:17:52.526Z",
+    "duration": 3203,
+    "testsRegistered": 4,
+    "passPercent": 0,
+    "pendingPercent": 0,
+    "other": 0,
+    "hasOther": false,
+    "skipped": 0,
+    "hasSkipped": false
+  },
+  "results": [
+    {
+      "uuid": "82e76146-101a-43cb-8d10-61917e81d405",
+      "title": "",
+      "fullFile": "cypress\\e2e\\itera\\Login.cy.js",
+      "file": "cypress\\e2e\\itera\\Login.cy.js",
+      "beforeHooks": [],
+      "afterHooks": [],
+      "tests": [],
+      "suites": [
+        {
+          "uuid": "fec57ba7-d27b-4b3c-9246-76e1f583de6f",
+          "title": "Login",
+          "fullFile": "",
+          "file": "",
+          "beforeHooks": [],
+          "afterHooks": [],
+          "tests": [
+            {
+              "title": "Success Login",
+              "fullTitle": "Login Success Login",
+              "timedOut": null,
+              "duration": 826,
+              "state": "failed",
+              "speed": null,
+              "pass": false,
+              "fail": true,
+              "pending": false,
+              "context": null,
+              "code": "cy.visit('https://itera-qa.azurewebsites.net/');\ncy.get('.form-inline > .navbar-nav > :nth-child(2) > .nav-link').click();\ncy.get('#Username').type('Daw01235');\ncy.get('#Password').type('123456Daw');\ncy.get('.btn-primary').click();\ncy.get('.form-inline > .navbar-nav > :nth-child(2) > .nav-link').click();",
+              "err": {
+                "message": "CypressError: `cy.visit()` failed trying to load:\n\nhttps://itera-qa.azurewebsites.net/\n\nWe attempted to make an http request to this URL but the request failed without a response.\n\nWe received this error at the network level:\n\n  > Error: getaddrinfo ENOTFOUND itera-qa.azurewebsites.net\n\nCommon situations why this would fail:\n  - you don't have internet access\n  - you forgot to run / boot your web server\n  - your web server isn't accessible\n  - you have weird network configuration settings on your computer",
+                "estack": "CypressError: `cy.visit()` failed trying to load:\n\nhttps://itera-qa.azurewebsites.net/\n\nWe attempted to make an http request to this URL but the request failed without a response.\n\nWe received this error at the network level:\n\n  > Error: getaddrinfo ENOTFOUND itera-qa.azurewebsites.net\n\nCommon situations why this would fail:\n  - you don't have internet access\n  - you forgot to run / boot your web server\n  - your web server isn't accessible\n  - you have weird network configuration settings on your computer\n    at <unknown> (http://localhost:63079/__cypress/runner/cypress_runner.js:138252:82)\n    at visitFailedByErr (http://localhost:63079/__cypress/runner/cypress_runner.js:137644:12)\n    at <unknown> (http://localhost:63079/__cypress/runner/cypress_runner.js:138251:11)\n    at tryCatcher (http://localhost:63079/__cypress/runner/cypress_runner.js:8914:23)\n    at Promise._settlePromiseFromHandler (http://localhost:63079/__cypress/runner/cypress_runner.js:6849:31)\n    at Promise._settlePromise (http://localhost:63079/__cypress/runner/cypress_runner.js:6906:18)\n    at Promise._settlePromise0 (http://localhost:63079/__cypress/runner/cypress_runner.js:6951:10)\n    at Promise._settlePromises (http://localhost:63079/__cypress/runner/cypress_runner.js:7027:18)\n    at _drainQueueStep (http://localhost:63079/__cypress/runner/cypress_runner.js:3621:12)\n    at _drainQueue (http://localhost:63079/__cypress/runner/cypress_runner.js:3614:9)\n    at ../../node_modules/bluebird/js/release/async.js.Async._drainQueues (http://localhost:63079/__cypress/runner/cypress_runner.js:3630:5)\n    at Async.drainQueues (http://localhost:63079/__cypress/runner/cypress_runner.js:3500:14)\nFrom Your Spec Code:\n    at Context.eval (webpack:///./cypress/e2e/itera/Login.cy.js:9:11)\n\nFrom Node.js Internals:\n  Error: getaddrinfo ENOTFOUND itera-qa.azurewebsites.net\n      at GetAddrInfoReqWrap.onlookup [as oncomplete] (node:dns:71:26)",
+                "diff": null
+              },
+              "uuid": "59324cbb-24a3-4b52-af42-f82b21232dd1",
+              "parentUUID": "fec57ba7-d27b-4b3c-9246-76e1f583de6f",
+              "isHook": false,
+              "skipped": false
+            },
+            {
+              "title": "Login Failed",
+              "fullTitle": "Login Login Failed",
+              "timedOut": null,
+              "duration": 709,
+              "state": "failed",
+              "speed": null,
+              "pass": false,
+              "fail": true,
+              "pending": false,
+              "context": null,
+              "code": "cy.visit('https://itera-qa.azurewebsites.net/');\ncy.get('.form-inline > .navbar-nav > :nth-child(2) > .nav-link').click();\ncy.get('#Username');\ncy.get('#Password');\ncy.get('.btn-primary').click();\ncy.get('.alert-danger');",
+              "err": {
+                "message": "CypressError: `cy.visit()` failed trying to load:\n\nhttps://itera-qa.azurewebsites.net/\n\nWe attempted to make an http request to this URL but the request failed without a response.\n\nWe received this error at the network level:\n\n  > Error: getaddrinfo ENOTFOUND itera-qa.azurewebsites.net\n\nCommon situations why this would fail:\n  - you don't have internet access\n  - you forgot to run / boot your web server\n  - your web server isn't accessible\n  - you have weird network configuration settings on your computer",
+                "estack": "CypressError: `cy.visit()` failed trying to load:\n\nhttps://itera-qa.azurewebsites.net/\n\nWe attempted to make an http request to this URL but the request failed without a response.\n\nWe received this error at the network level:\n\n  > Error: getaddrinfo ENOTFOUND itera-qa.azurewebsites.net\n\nCommon situations why this would fail:\n  - you don't have internet access\n  - you forgot to run / boot your web server\n  - your web server isn't accessible\n  - you have weird network configuration settings on your computer\n    at <unknown> (http://localhost:63079/__cypress/runner/cypress_runner.js:138252:82)\n    at visitFailedByErr (http://localhost:63079/__cypress/runner/cypress_runner.js:137644:12)\n    at <unknown> (http://localhost:63079/__cypress/runner/cypress_runner.js:138251:11)\n    at tryCatcher (http://localhost:63079/__cypress/runner/cypress_runner.js:8914:23)\n    at Promise._settlePromiseFromHandler (http://localhost:63079/__cypress/runner/cypress_runner.js:6849:31)\n    at Promise._settlePromise (http://localhost:63079/__cypress/runner/cypress_runner.js:6906:18)\n    at Promise._settlePromise0 (http://localhost:63079/__cypress/runner/cypress_runner.js:6951:10)\n    at Promise._settlePromises (http://localhost:63079/__cypress/runner/cypress_runner.js:7027:18)\n    at _drainQueueStep (http://localhost:63079/__cypress/runner/cypress_runner.js:3621:12)\n    at _drainQueue (http://localhost:63079/__cypress/runner/cypress_runner.js:3614:9)\n    at ../../node_modules/bluebird/js/release/async.js.Async._drainQueues (http://localhost:63079/__cypress/runner/cypress_runner.js:3630:5)\n    at Async.drainQueues (http://localhost:63079/__cypress/runner/cypress_runner.js:3500:14)\nFrom Your Spec Code:\n    at Context.eval (webpack:///./cypress/e2e/itera/Login.cy.js:18:11)\n\nFrom Node.js Internals:\n  Error: getaddrinfo ENOTFOUND itera-qa.azurewebsites.net\n      at GetAddrInfoReqWrap.onlookup [as oncomplete] (node:dns:71:26)",
+                "diff": null
+              },
+              "uuid": "5f4c9c5f-c0be-4632-aaf5-e1932fd2a7c9",
+              "parentUUID": "fec57ba7-d27b-4b3c-9246-76e1f583de6f",
+              "isHook": false,
+              "skipped": false
+            },
+            {
+              "title": "Login Failed Empthy Username",
+              "fullTitle": "Login Login Failed Empthy Username",
+              "timedOut": null,
+              "duration": 767,
+              "state": "failed",
+              "speed": null,
+              "pass": false,
+              "fail": true,
+              "pending": false,
+              "context": null,
+              "code": "cy.visit('https://itera-qa.azurewebsites.net/');\ncy.get('.form-inline > .navbar-nav > :nth-child(2) > .nav-link').click();\ncy.get('#Username');\ncy.get('#Password').type('123456Daw');\ncy.get('.btn-primary').click();\ncy.get('.alert-danger');",
+              "err": {
+                "message": "CypressError: `cy.visit()` failed trying to load:\n\nhttps://itera-qa.azurewebsites.net/\n\nWe attempted to make an http request to this URL but the request failed without a response.\n\nWe received this error at the network level:\n\n  > Error: getaddrinfo ENOTFOUND itera-qa.azurewebsites.net\n\nCommon situations why this would fail:\n  - you don't have internet access\n  - you forgot to run / boot your web server\n  - your web server isn't accessible\n  - you have weird network configuration settings on your computer",
+                "estack": "CypressError: `cy.visit()` failed trying to load:\n\nhttps://itera-qa.azurewebsites.net/\n\nWe attempted to make an http request to this URL but the request failed without a response.\n\nWe received this error at the network level:\n\n  > Error: getaddrinfo ENOTFOUND itera-qa.azurewebsites.net\n\nCommon situations why this would fail:\n  - you don't have internet access\n  - you forgot to run / boot your web server\n  - your web server isn't accessible\n  - you have weird network configuration settings on your computer\n    at <unknown> (http://localhost:63079/__cypress/runner/cypress_runner.js:138252:82)\n    at visitFailedByErr (http://localhost:63079/__cypress/runner/cypress_runner.js:137644:12)\n    at <unknown> (http://localhost:63079/__cypress/runner/cypress_runner.js:138251:11)\n    at tryCatcher (http://localhost:63079/__cypress/runner/cypress_runner.js:8914:23)\n    at Promise._settlePromiseFromHandler (http://localhost:63079/__cypress/runner/cypress_runner.js:6849:31)\n    at Promise._settlePromise (http://localhost:63079/__cypress/runner/cypress_runner.js:6906:18)\n    at Promise._settlePromise0 (http://localhost:63079/__cypress/runner/cypress_runner.js:6951:10)\n    at Promise._settlePromises (http://localhost:63079/__cypress/runner/cypress_runner.js:7027:18)\n    at _drainQueueStep (http://localhost:63079/__cypress/runner/cypress_runner.js:3621:12)\n    at _drainQueue (http://localhost:63079/__cypress/runner/cypress_runner.js:3614:9)\n    at ../../node_modules/bluebird/js/release/async.js.Async._drainQueues (http://localhost:63079/__cypress/runner/cypress_runner.js:3630:5)\n    at Async.drainQueues (http://localhost:63079/__cypress/runner/cypress_runner.js:3500:14)\nFrom Your Spec Code:\n    at Context.eval (webpack:///./cypress/e2e/itera/Login.cy.js:27:11)\n\nFrom Node.js Internals:\n  Error: getaddrinfo ENOTFOUND itera-qa.azurewebsites.net\n      at GetAddrInfoReqWrap.onlookup [as oncomplete] (node:dns:71:26)",
+                "diff": null
+              },
+              "uuid": "273674cc-5a3d-4288-af59-f9288a54004d",
+              "parentUUID": "fec57ba7-d27b-4b3c-9246-76e1f583de6f",
+              "isHook": false,
+              "skipped": false
+            },
+            {
+              "title": "Login Failed Empthy Password",
+              "fullTitle": "Login Login Failed Empthy Password",
+              "timedOut": null,
+              "duration": 771,
+              "state": "failed",
+              "speed": null,
+              "pass": false,
+              "fail": true,
+              "pending": false,
+              "context": null,
+              "code": "cy.visit('https://itera-qa.azurewebsites.net/');\ncy.get('.form-inline > .navbar-nav > :nth-child(2) > .nav-link').click();\ncy.get('#Username').type('Daw01235');\ncy.get('#Password');\ncy.get('.btn-primary').click();\ncy.get('.alert-danger');",
+              "err": {
+                "message": "CypressError: `cy.visit()` failed trying to load:\n\nhttps://itera-qa.azurewebsites.net/\n\nWe attempted to make an http request to this URL but the request failed without a response.\n\nWe received this error at the network level:\n\n  > Error: getaddrinfo ENOTFOUND itera-qa.azurewebsites.net\n\nCommon situations why this would fail:\n  - you don't have internet access\n  - you forgot to run / boot your web server\n  - your web server isn't accessible\n  - you have weird network configuration settings on your computer",
+                "estack": "CypressError: `cy.visit()` failed trying to load:\n\nhttps://itera-qa.azurewebsites.net/\n\nWe attempted to make an http request to this URL but the request failed without a response.\n\nWe received this error at the network level:\n\n  > Error: getaddrinfo ENOTFOUND itera-qa.azurewebsites.net\n\nCommon situations why this would fail:\n  - you don't have internet access\n  - you forgot to run / boot your web server\n  - your web server isn't accessible\n  - you have weird network configuration settings on your computer\n    at <unknown> (http://localhost:63079/__cypress/runner/cypress_runner.js:138252:82)\n    at visitFailedByErr (http://localhost:63079/__cypress/runner/cypress_runner.js:137644:12)\n    at <unknown> (http://localhost:63079/__cypress/runner/cypress_runner.js:138251:11)\n    at tryCatcher (http://localhost:63079/__cypress/runner/cypress_runner.js:8914:23)\n    at Promise._settlePromiseFromHandler (http://localhost:63079/__cypress/runner/cypress_runner.js:6849:31)\n    at Promise._settlePromise (http://localhost:63079/__cypress/runner/cypress_runner.js:6906:18)\n    at Promise._settlePromise0 (http://localhost:63079/__cypress/runner/cypress_runner.js:6951:10)\n    at Promise._settlePromises (http://localhost:63079/__cypress/runner/cypress_runner.js:7027:18)\n    at _drainQueueStep (http://localhost:63079/__cypress/runner/cypress_runner.js:3621:12)\n    at _drainQueue (http://localhost:63079/__cypress/runner/cypress_runner.js:3614:9)\n    at ../../node_modules/bluebird/js/release/async.js.Async._drainQueues (http://localhost:63079/__cypress/runner/cypress_runner.js:3630:5)\n    at Async.drainQueues (http://localhost:63079/__cypress/runner/cypress_runner.js:3500:14)\nFrom Your Spec Code:\n    at Context.eval (webpack:///./cypress/e2e/itera/Login.cy.js:36:11)\n\nFrom Node.js Internals:\n  Error: getaddrinfo ENOTFOUND itera-qa.azurewebsites.net\n      at GetAddrInfoReqWrap.onlookup [as oncomplete] (node:dns:71:26)",
+                "diff": null
+              },
+              "uuid": "1decae94-1a8e-43ef-a28b-e5712b05dfbd",
+              "parentUUID": "fec57ba7-d27b-4b3c-9246-76e1f583de6f",
+              "isHook": false,
+              "skipped": false
+            }
+          ],
+          "suites": [],
+          "passes": [],
+          "failures": [
+            "59324cbb-24a3-4b52-af42-f82b21232dd1",
+            "5f4c9c5f-c0be-4632-aaf5-e1932fd2a7c9",
+            "273674cc-5a3d-4288-af59-f9288a54004d",
+            "1decae94-1a8e-43ef-a28b-e5712b05dfbd"
+          ],
+          "pending": [],
+          "skipped": [],
+          "duration": 3073,
+          "root": false,
+          "rootEmpty": false,
+          "_timeout": 2000
+        }
+      ],
+      "passes": [],
+      "failures": [],
+      "pending": [],
+      "skipped": [],
+      "duration": 0,
+      "root": true,
+      "rootEmpty": true,
+      "_timeout": 2000
+    }
+  ],
+  "meta": {
+    "mocha": {
+      "version": "7.0.1"
+    },
+    "mochawesome": {
+      "options": {
+        "quiet": false,
+        "reportFilename": "mochawesome",
+        "saveHtml": false,
+        "saveJson": true,
+        "consoleReporter": "spec",
+        "useInlineDiffs": false,
+        "code": true
+      },
+      "version": "7.1.4"
+    },
+    "marge": {
+      "options": {
+        "reportDir": "results",
+        "overwrite": false,
+        "html": false,
+        "json": true
+      },
+      "version": "6.3.2"
+    }
+  }
+}

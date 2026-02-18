@@ -20,14 +20,11 @@ jobs:
         run: |
           mkdir -p results
           docker run --rm \
-          -v ${{ github.workspace }}:/app \
-          -w /app \
-          cypress/included:13.6.6 \
-          cypress run \
-          --reporter json \
-          --reporter-options output=/app/results/results.json \
-          || echo "CYPRESS_FAILED=true" >> $GITHUB_ENV
-
+            -v ${{ github.workspace }}:/app \
+            -w /app \
+            cypress/included:13.6.6 \
+            cypress run \
+            || echo "CYPRESS_FAILED=true" >> $GITHUB_ENV
 
       - name: Debug results folder
         if: always()
@@ -40,13 +37,14 @@ jobs:
       - name: Extract failed tests
         if: always()
         run: |
-          if [ -f results/results.json ]; then
+          if [ -f results/mochawesome.json ]; then
             FAILED_TEST_DETAILS=$(jq -r '
-              .tests[] | select(.state=="failed") |
-              "- " + .title
-            ' results/results.json)
+              .results[].suites[].tests[]
+              | select(.fail == true)
+              | "- " + .title
+            ' results/mochawesome.json)
           else
-            FAILED_TEST_DETAILS="No results.json found"
+            FAILED_TEST_DETAILS="No failed tests found"
           fi
 
           echo "FAILED_TEST_DETAILS<<EOF" >> $GITHUB_ENV
@@ -89,11 +87,11 @@ jobs:
 
           if [ "$CYPRESS_FAILED" = "true" ]; then
             STATUS="FAILED"
-            COLOR=15158332   # 🔴 red
+            COLOR=15158332
             ICON="❌"
           else
             STATUS="SUCCESS"
-            COLOR=3066993    # 🟢 green
+            COLOR=3066993
             ICON="✅"
           fi
 
@@ -109,6 +107,7 @@ jobs:
             --arg run "${{ github.run_number }}" \
             --arg url "$RUN_URL" \
             --arg icon "$ICON" \
+            --arg failedDetails "$FAILED_TEST_DETAILS" \
             --argjson color $COLOR \
           '{
             embeds: [
@@ -122,7 +121,10 @@ jobs:
                   {name: "Total Tests", value: $total, inline: true},
                   {name: "Passed", value: $passed, inline: true},
                   {name: "Failed", value: $failed, inline: true},
-                  {name: "Run Number", value: ("#" + $run), inline: true}
+                  {
+                    name: "❗ Failed Tests",
+                    value: ($failedDetails | if . == "" then "None" else . end)
+                  }
                 ],
                 url: $url,
                 footer: {
@@ -136,3 +138,4 @@ jobs:
                   -X POST \
                   -d @- \
                   ${{ secrets.DISCORD_WEBHOOK }}
+
