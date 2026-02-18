@@ -93,16 +93,16 @@ jobs:
             STATUS="✅ SUCCESS"
           fi
 
-          MESSAGE="Cypress Test Result:
+          MESSAGE="**Cypress Test Result (Docker)**
           Repo: ${{ github.repository }}
           Branch: ${{ github.ref_name }}
           Status: $STATUS
           Total Tests: $TOTAL_TESTS
           Passed Tests: $PASSED_TESTS
           Failed Tests: $FAILED_TESTS
-          Run: ${{ github.run_number }}
-          "
+          Run: ${{ github.run_number }}"
 
-          curl -s -X POST https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendMessage \
-          -d chat_id=${{ secrets.TELEGRAM_CHAT_ID }} \
-          -d text="$MESSAGE"
+          curl -H "Content-Type: application/json" \
+            -X POST \
+            -d "{\"content\":\"$MESSAGE\"}" \
+            ${{ secrets.DISCORD_WEBHOOK }}
