@@ -13,9 +13,14 @@ jobs:
       - name: Checkout repo
         uses: actions/checkout@v4
 
+      # ✅ jq diperlukan untuk parsing JSON
+      - name: Install jq
+        run: sudo apt-get update && sudo apt-get install -y jq
+
       - name: Build Docker image
         run: docker build -t cypress-test .
 
+      # ✅ RUN CYPRESS + MOCHAWESOME
       - name: Run Cypress tests (Docker)
         run: |
           mkdir -p results
@@ -24,6 +29,8 @@ jobs:
             -w /app \
             cypress/included:13.6.6 \
             cypress run \
+            --reporter mochawesome \
+            --reporter-options reportDir=/app/results,overwrite=false,html=false,json=true \
             || echo "CYPRESS_FAILED=true" >> $GITHUB_ENV
 
       - name: Debug results folder
@@ -32,19 +39,36 @@ jobs:
           echo "=== results folder ==="
           ls -lah results || true
 
+      # ✅ EXTRACT SUMMARY (AUTO COUNT)
+      - name: Extract test summary
+        if: always()
+        run: |
+          if [ -f results/mochawesome.json ]; then
+            TOTAL_TESTS=$(jq '.stats.tests' results/mochawesome.json)
+            FAILED_TESTS=$(jq '.stats.failures' results/mochawesome.json)
+            PASSED_TESTS=$(jq '.stats.passes' results/mochawesome.json)
+          else
+            TOTAL_TESTS=0
+            FAILED_TESTS=0
+            PASSED_TESTS=0
+          fi
 
-      # ✅ STEP 6.3 — HARUS DI SINI
+          echo "TOTAL_TESTS=$TOTAL_TESTS" >> $GITHUB_ENV
+          echo "FAILED_TESTS=$FAILED_TESTS" >> $GITHUB_ENV
+          echo "PASSED_TESTS=$PASSED_TESTS" >> $GITHUB_ENV
+
+      # ✅ EXTRACT FAILED TEST LIST (FIXED QUERY)
       - name: Extract failed tests
         if: always()
         run: |
           if [ -f results/mochawesome.json ]; then
             FAILED_TEST_DETAILS=$(jq -r '
-              .results[].suites[].tests[]
-              | select(.fail == true)
+              .. | objects
+              | select(has("fail") and .fail == true)
               | "- " + .title
             ' results/mochawesome.json)
           else
-            FAILED_TEST_DETAILS="No failed tests found"
+            FAILED_TEST_DETAILS="None"
           fi
 
           echo "FAILED_TEST_DETAILS<<EOF" >> $GITHUB_ENV
@@ -78,14 +102,13 @@ jobs:
       #     -d chat_id=${{ secrets.TELEGRAM_CHAT_ID }} \
       #     -d text="$MESSAGE"
 
+       # ✅ SEND DISCORD EMBED (SLACK STYLE)
       - name: Send Discord Embed Notification
         if: always()
         run: |
-          TOTAL_TESTS=23
-          FAILED_TESTS=3
-          PASSED_TESTS=$((TOTAL_TESTS - FAILED_TESTS))
 
-          if [ "$CYPRESS_FAILED" = "true" ]; then
+          # AUTO STATUS
+          if [ "$FAILED_TESTS" -gt 0 ]; then
             STATUS="FAILED"
             COLOR=15158332
             ICON="❌"
@@ -104,7 +127,6 @@ jobs:
             --arg total "$TOTAL_TESTS" \
             --arg passed "$PASSED_TESTS" \
             --arg failed "$FAILED_TESTS" \
-            --arg run "${{ github.run_number }}" \
             --arg url "$RUN_URL" \
             --arg icon "$ICON" \
             --arg failedDetails "$FAILED_TEST_DETAILS" \
@@ -113,6 +135,7 @@ jobs:
             embeds: [
               {
                 title: "🧪 Cypress Automation Report",
+                url: $url,
                 color: $color,
                 fields: [
                   {name: "Repository", value: $repo, inline: true},
@@ -126,16 +149,15 @@ jobs:
                     value: ($failedDetails | if . == "" then "None" else . end)
                   }
                 ],
-                url: $url,
                 footer: {
                   text: "GitHub Actions • Cypress Automation"
                 },
-                timestamp: now | todate
+                timestamp: (now | todateiso8601)
               }
             ]
           }' \
-              | curl -H "Content-Type: application/json" \
-                  -X POST \
-                  -d @- \
-                  ${{ secrets.DISCORD_WEBHOOK }}
+          | curl -H "Content-Type: application/json" \
+              -X POST \
+              -d @- \
+              ${{ secrets.DISCORD_WEBHOOK }}
 
