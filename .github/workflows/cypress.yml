@@ -24,14 +24,19 @@ jobs:
       - name: Run Cypress tests (Docker)
         run: |
           mkdir -p results
+
           docker run --rm \
             -v ${{ github.workspace }}:/app \
             -w /app \
             cypress/included:13.6.6 \
-            cypress run \
-            --reporter mochawesome \
-            --reporter-options reportDir=/app/results,overwrite=false,html=false,json=true \
+            sh -c "
+              npm install &&
+              npx cypress run \
+                --reporter mochawesome \
+                --reporter-options reportDir=results,overwrite=false,html=false,json=true
+            " \
             || echo "CYPRESS_FAILED=true" >> $GITHUB_ENV
+
 
       - name: Debug results folder
         if: always()
@@ -61,12 +66,12 @@ jobs:
       - name: Extract failed tests
         if: always()
         run: |
-          if [ -f results/mochawesome.json ]; then
+          if ls results/*.json 1> /dev/null 2>&1; then
             FAILED_TEST_DETAILS=$(jq -r '
-              .. | objects
-              | select(has("fail") and .fail == true)
-              | "- " + .title
-            ' results/mochawesome.json)
+              .results[].suites[].tests[]
+              | select(.fail == true)
+              | "- " + .fullTitle
+            ' results/*.json)
           else
             FAILED_TEST_DETAILS="None"
           fi
@@ -74,6 +79,7 @@ jobs:
           echo "FAILED_TEST_DETAILS<<EOF" >> $GITHUB_ENV
           echo "$FAILED_TEST_DETAILS" >> $GITHUB_ENV
           echo "EOF" >> $GITHUB_ENV
+
 
       # - name: Send Telegram Notification
       #   if: always()
