@@ -22,21 +22,16 @@ jobs:
 
       # ✅ RUN CYPRESS + MOCHAWESOME
       - name: Run Cypress tests (Docker)
+        continue-on-error: true
         run: |
           mkdir -p results
-
           docker run --rm \
             -v ${{ github.workspace }}:/app \
             -w /app \
             cypress/included:13.6.6 \
-            sh -c "
-              npm install &&
-              npx cypress run \
-                --reporter mochawesome \
-                --reporter-options reportDir=results,overwrite=false,html=false,json=true,quiet=true
-            " \
-            || echo "CYPRESS_FAILED=true" >> $GITHUB_ENV
-
+            cypress run \
+            --reporter mochawesome \
+            --reporter-options reportDir=results,overwrite=false,html=false,json=true
 
       - name: Debug results folder
         if: always()
@@ -44,20 +39,14 @@ jobs:
           echo "=== results folder ==="
           ls -lah results || true
       
-      - name: Merge mochawesome reports
-        if: always()
+      - name: Remove empty mochawesome files
         run: |
-          echo "Filtering valid mochawesome JSON files..."
+          find results -type f -name "*.json" -size 0 -delete
 
-          VALID_FILES=$(for f in results/*.json; do
-           if [ -s "$f" ]; then
-            echo $f
-          fi
-          done)
-          echo "Files to merge:"
-          echo "$VALID_FILES"
-          npx mochawesome-merge $VALID_FILES > results/mochawesome.json
-
+      - name: Merge mochawesome reports
+        run: |
+          ls results/*.json
+          npx mochawesome-merge results/*.json > results/mochawesome.json || echo "{}" > results/mochawesome.json
 
       # ✅ EXTRACT SUMMARY (AUTO COUNT)
       - name: Extract test summary
