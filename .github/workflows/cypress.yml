@@ -45,8 +45,13 @@ jobs:
 
       - name: Merge mochawesome reports
         run: |
-          ls results/*.json
-          npx mochawesome-merge results/*.json > results/mochawesome.json || echo "{}" > results/mochawesome.json
+          ls results/mochawesome_*.json
+          npx mochawesome-merge results/mochawesome_*.json \
+          > results/mochawesome.json
+
+      - name: Debug merged report
+        run: cat results/mochawesome.json | jq '.stats'
+
 
       # ✅ EXTRACT SUMMARY (AUTO COUNT)
       - name: Extract test summary
@@ -135,7 +140,7 @@ jobs:
         run: |
 
           # AUTO STATUS
-          if [ "$FAILED_TESTS" -gt 0 ]; then
+          if [ "$FAILED_TESTS" != "0" ]; then
             STATUS="FAILED"
             COLOR=15158332
             ICON="❌"
