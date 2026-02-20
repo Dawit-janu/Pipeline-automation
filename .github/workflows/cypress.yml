@@ -44,13 +44,17 @@ jobs:
             -v ${{ github.workspace }}:/app \
             -w /app \
             cypress/included:13.6.6 \
-            cypress run \
-            --record \
-            --key ${{ secrets.CYPRESS_RECORD_KEY }} \
-            --ci-build-id ${{ github.run_id }} \
-            --group "${{ github.event_name }}" \
-            --reporter mochawesome \
-            --reporter-options reportDir=results,overwrite=false,html=false,json=true
+            bash -c "
+              ls -lah &&
+              cypress run \
+                --config-file cypress.config.js \
+                --record \
+                --key ${{ secrets.CYPRESS_RECORD_KEY }} \
+                --ci-build-id ${{ github.run_id }} \
+                --group '${{ github.event_name }}' \
+                --reporter mochawesome \
+                --reporter-options reportDir=results,overwrite=false,html=false,json=true
+            "
 
       - name: Debug results folder
         if: always()
