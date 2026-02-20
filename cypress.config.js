@@ -2,6 +2,9 @@ const { defineConfig } = require("cypress");
 
 module.exports = defineConfig({
 
+  // ✅ TAMBAHKAN DI SINI (LEVEL ATAS)
+  projectId: "wipkva",
+
   // ✅ Tambahan mochawesome reporter
   reporter: "mochawesome",
   reporterOptions: {
