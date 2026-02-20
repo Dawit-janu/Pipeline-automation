@@ -40,10 +40,15 @@ jobs:
         run: |
           mkdir -p results
           docker run --rm \
+            -e CYPRESS_RECORD_KEY=${{ secrets.CYPRESS_RECORD_KEY }} \
+            -e CI=true \
             -v ${{ github.workspace }}:/app \
             -w /app \
             cypress/included:13.6.6 \
             cypress run \
+            --record \
+            --key $CYPRESS_RECORD_KEY \
+            --ci-build-id ${{ github.run_id }} \
             --reporter mochawesome \
             --reporter-options reportDir=results,overwrite=false,html=false,json=true
 
