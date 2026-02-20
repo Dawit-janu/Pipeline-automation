@@ -31,15 +31,22 @@ jobs:
       - name: Install jq
         run: sudo apt-get update && sudo apt-get install -y jq
 
-      - name: Build Docker image
-        run: docker build -t cypress-test .
+      # ✅ INSTALL DEPENDENCY (WAJIB UNTUK MOCHAWESOME MERGE)
+      - name: Install dependencies
+        run: npm ci
 
-      # ✅ RUN CYPRESS + MOCHAWESOME
+      # - name: Build Docker image
+      #   run: docker build -t cypress-test .
+
+      # ✅ Cypress cloud run (ini kunci dashboard)
       - name: Cypress Run
+        id: cypress
         uses: cypress-io/github-action@v6
         with:
           record: true
           config-file: cypress.config.js
+          ci-build-id: ${{ github.run_id }}
+          group: ${{ github.event_name }}
           command: >
             npx cypress run
             --reporter mochawesome
@@ -47,24 +54,24 @@ jobs:
         env:
           CYPRESS_RECORD_KEY: ${{ secrets.CYPRESS_RECORD_KEY }}
 
-      - name: Debug results folder
-        if: always()
-        run: |
-          echo "=== results folder ==="
-          ls -lah results || true
+      # - name: Debug results folder
+      #   if: always()
+      #   run: |
+      #     echo "=== results folder ==="
+      #     ls -lah results || true
       
       - name: Remove empty mochawesome files
+        if : always()
         run: |
-          find results -type f -name "*.json" -size 0 -delete
+          find results -type f -name "*.json" -size 0 -delete || true
 
       - name: Merge mochawesome reports
+        if : always()
         run: |
-          ls results/mochawesome_*.json
-          npx mochawesome-merge results/mochawesome_*.json \
-          > results/mochawesome.json
+          npx mochawesome-merge results/*.json > results/mochawesome.json
 
-      - name: Debug merged report
-        run: cat results/mochawesome.json | jq '.stats'
+      # - name: Debug merged report
+      #   run: cat results/mochawesome.json | jq '.stats'
 
 
       # ✅ EXTRACT SUMMARY (AUTO COUNT)
