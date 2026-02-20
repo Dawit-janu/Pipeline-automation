@@ -38,7 +38,7 @@ jobs:
       # - name: Build Docker image
       #   run: docker build -t cypress-test .
 
-      # ✅ Cypress cloud run (ini kunci dashboard)
+      # ✅ INSTALL DEPENDENCY (WAJIB UNTUK MOCHAWESOME MERGE)
       - name: Cypress Run
         id: cypress
         uses: cypress-io/github-action@v6
@@ -54,11 +54,11 @@ jobs:
         env:
           CYPRESS_RECORD_KEY: ${{ secrets.CYPRESS_RECORD_KEY }}
 
-      # - name: Debug results folder
-      #   if: always()
-      #   run: |
-      #     echo "=== results folder ==="
-      #     ls -lah results || true
+      - name: Debug results folder
+        if: always()
+        run: |
+          echo "=== results folder ==="
+          ls -lah results || true
       
       - name: Remove empty mochawesome files
         run: |
