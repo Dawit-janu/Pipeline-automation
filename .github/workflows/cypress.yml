@@ -35,26 +35,17 @@ jobs:
         run: docker build -t cypress-test .
 
       # ✅ RUN CYPRESS + MOCHAWESOME
-      - name: Run Cypress tests (Docker)
-        continue-on-error: true
-        run: |
-          mkdir -p results
-          docker run --rm \
-            -e CI=true \
-            -v ${{ github.workspace }}:/app \
-            -w /app \
-            cypress/included:13.6.6 \
-            bash -c "
-              ls -lah &&
-              cypress run \
-                --config-file cypress.config.js \
-                --record \
-                --key ${{ secrets.CYPRESS_RECORD_KEY }} \
-                --ci-build-id ${{ github.run_id }} \
-                --group '${{ github.event_name }}' \
-                --reporter mochawesome \
-                --reporter-options reportDir=results,overwrite=false,html=false,json=true
-            "
+      - name: Cypress Run
+        uses: cypress-io/github-action@v6
+        with:
+          record: true
+          config-file: cypress.config.js
+          command: >
+            npx cypress run
+            --reporter mochawesome
+            --reporter-options reportDir=results,overwrite=false,html=false,json=true
+        env:
+          CYPRESS_RECORD_KEY: ${{ secrets.CYPRESS_RECORD_KEY }}
 
       - name: Debug results folder
         if: always()
