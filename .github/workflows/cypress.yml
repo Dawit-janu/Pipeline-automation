@@ -31,10 +31,6 @@ jobs:
       - name: Install jq
         run: sudo apt-get update && sudo apt-get install -y jq
 
-      # ✅ INSTALL DEPENDENCY (WAJIB UNTUK MOCHAWESOME MERGE)
-      - name: Install dependencies
-        run: npm ci
-
       - name: Build Docker image
         run: docker build -t cypress-test .
 
@@ -43,11 +39,8 @@ jobs:
         uses: cypress-io/github-action@v6
         with:
           record: true
+          parallel: false
           config-file: cypress.config.js
-          command: >
-            npx cypress run
-            --reporter mochawesome
-            --reporter-options reportDir=results,overwrite=false,html=false,json=true
         env:
           CYPRESS_RECORD_KEY: ${{ secrets.CYPRESS_RECORD_KEY }}
 
