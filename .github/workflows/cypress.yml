@@ -35,18 +35,15 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      # - name: Build Docker image
-      #   run: docker build -t cypress-test .
+      - name: Build Docker image
+        run: docker build -t cypress-test .
 
-      # ✅ INSTALL DEPENDENCY (WAJIB UNTUK MOCHAWESOME MERGE)
+      # ✅ RUN CYPRESS + MOCHAWESOME
       - name: Cypress Run
-        id: cypress
         uses: cypress-io/github-action@v6
         with:
           record: true
           config-file: cypress.config.js
-          ci-build-id: ${{ github.run_id }}
-          group: ${{ github.event_name }}
           command: >
             npx cypress run
             --reporter mochawesome
