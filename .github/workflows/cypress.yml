@@ -314,7 +314,7 @@ jobs:
             --argjson color     $COLOR \
           '{
             embeds: [{
-              title: ($icon + " Cypress Report — Test Run #" + $runNumber "—" + $status),
+              title: ($icon + " Cypress Report — " + $status),
               url: $cloudUrl,
               color: $color,
               fields: [
