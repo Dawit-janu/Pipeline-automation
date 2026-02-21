@@ -1,25 +1,19 @@
 const { defineConfig } = require("cypress");
+const allureWriter = require("@shelex/cypress-allure-plugin/writer");
 
 module.exports = defineConfig({
 
-  // ✅ TAMBAHKAN DI SINI (LEVEL ATAS)
+  // ✅ Cypress Cloud - Project ID
   projectId: "wipkva",
-
-  // ✅ Tambahan mochawesome reporter
-  reporter: "mochawesome",
-  reporterOptions: {
-    reportDir: "results",
-    overwrite: false,
-    html: false,
-    json: true
-  },
 
   e2e: {
     setupNodeEvents(on, config) {
-      // implement node event listeners here
+      // ✅ Allure plugin writer
+      allureWriter(on, config);
       return config;
     },
   },
+
   video: true,
   screenshotOnRunFailure: true,
   videoCompression: 15,
