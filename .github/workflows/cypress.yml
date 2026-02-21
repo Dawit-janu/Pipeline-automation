@@ -249,9 +249,14 @@ jobs:
       # ✅ DISCORD NOTIFICATION
       # Link langsung ke Cypress Cloud + Allure artifact
       # ============================================================
-      - name: Send Discord Notification (Katalon Style)
+      - name: Send Discord Notification
         if: always()
         run: |
+
+          # ================================
+          # EXECUTION TIME
+          # ================================
+          EXEC_TIME=$(date "+Today at %I:%M %p")
 
           # ================================
           # STATUS
@@ -281,17 +286,20 @@ jobs:
           fi
 
           # ================================
-          # MESSAGE BODY (KATALON STYLE)
+          # MESSAGE BODY
           # ================================
           DESCRIPTION="Test Run #${{ github.run_number }} has $STATUS.
 
-          📦 Suite : Cypress Automation
+          📦 Suite : $TEST_SUITE
+          🗓 Executed : $EXEC_TIME
           ⏱ Duration : $TEST_DURATION
           $RESULT_LINE
 
           $FAILED_SECTION
 
           Project : ${{ github.repository }}"
+
+          GitHub Actions • Cypress Cloud • Run #${{ github.run_number }} • $EXEC_TIME"
 
           jq -n \
             --arg title "$ICON Automation Report Cypress" \
