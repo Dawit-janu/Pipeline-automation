@@ -289,7 +289,7 @@ jobs:
           # MESSAGE BODY
           # ================================
           DESCRIPTION=$(cat <<EOF
-            Test Run #${{ github.run_number }} has $STATUS.
+          Test Run #${{ github.run_number }} has $STATUS.
 
           📦 Suite : $TEST_SUITE
           🗓 Executed : $EXEC_TIME
