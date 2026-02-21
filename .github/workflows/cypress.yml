@@ -158,8 +158,10 @@ jobs:
           # FAILED TEST LIST (CYPRESS v13 SAFE)
           # ======================================
           FAILED_TEST_DETAILS=$(grep "✖" $OUTPUT_FILE \
+            | grep ".cy." \
             | sed 's/\x1b\[[0-9;]*m//g' \
-            | awk '{print "• " $0}')
+            | awk '{print $3}' \
+            | sed 's/^/• /')
 
           # ======================================
           # PASS RATE
