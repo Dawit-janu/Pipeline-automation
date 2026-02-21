@@ -63,9 +63,10 @@ jobs:
           set +e
 
           npx cypress run \
-            --record \
-            --key ${{ secrets.CYPRESS_RECORD_KEY }} \
-            | tee cypress-output.txt
+          --record \
+          --key ${{ secrets.CYPRESS_RECORD_KEY }} \
+          --reporter json \
+          --reporter-options "output=cypress-report.json"
 
           CYPRESS_EXIT_CODE=${PIPESTATUS[0]}
 
@@ -139,15 +140,17 @@ jobs:
           MINUTES=$((DURATION_SEC / 60))
           SECONDS=$((DURATION_SEC % 60))
 
-          TOTAL_TESTS=$(grep -oP 'Tests:\s+\K\d+' cypress-output.txt | tail -1)
-          PASSED_TESTS=$(grep -oP 'Passing:\s+\K\d+' cypress-output.txt | tail -1)
-          FAILED_TESTS=$(grep -oP 'Failing:\s+\K\d+' cypress-output.txt | tail -1)
-          PENDING_TESTS=$(grep -oP 'Pending:\s+\K\d+' cypress-output.txt | tail -1)
-
-          TOTAL_TESTS=${TOTAL_TESTS:-0}
-          PASSED_TESTS=${PASSED_TESTS:-0}
-          FAILED_TESTS=${FAILED_TESTS:-0}
-          PENDING_TESTS=${PENDING_TESTS:-0}
+           if [ -f cypress-report.json ]; then
+            TOTAL_TESTS=$(jq '.stats.tests' cypress-report.json)
+            PASSED_TESTS=$(jq '.stats.passes' cypress-report.json)
+            FAILED_TESTS=$(jq '.stats.failures' cypress-report.json)
+            PENDING_TESTS=$(jq '.stats.pending' cypress-report.json)
+          else
+            TOTAL_TESTS=0
+            PASSED_TESTS=0
+            FAILED_TESTS=0
+            PENDING_TESTS=0
+          fi
 
           if [ "$TOTAL_TESTS" -gt 0 ]; then
             PASS_RATE=$(echo "scale=1; $PASSED_TESTS * 100 / $TOTAL_TESTS" | bc)
@@ -178,13 +181,12 @@ jobs:
           #   PASS_RATE="0"
           # fi
 
-          echo "TOTAL_TESTS=$TOTAL_TESTS"              >> $GITHUB_ENV
-          echo "FAILED_TESTS=$FAILED_TESTS"            >> $GITHUB_ENV
-          echo "PASSED_TESTS=$PASSED_TESTS"            >> $GITHUB_ENV
-          echo "PENDING_TESTS=$PENDING_TESTS"          >> $GITHUB_ENV
+          echo "TOTAL_TESTS=$TOTAL_TESTS" >> $GITHUB_ENV
+          echo "PASSED_TESTS=$PASSED_TESTS" >> $GITHUB_ENV
+          echo "FAILED_TESTS=$FAILED_TESTS" >> $GITHUB_ENV
+          echo "PENDING_TESTS=$PENDING_TESTS" >> $GITHUB_ENV
           echo "TEST_DURATION=${MINUTES}m ${SECONDS}s" >> $GITHUB_ENV
-          echo "PASS_RATE=${PASS_RATE}%"               >> $GITHUB_ENV
-          echo "Total: $TOTAL_TESTS | Passed: $PASSED_TESTS | Failed: $FAILED_TESTS | Duration: ${MINUTES}m ${SECONDS}s"
+          echo "PASS_RATE=${PASS_RATE}%" >> $GITHUB_ENV
 
       # - name: Extract failed tests
       #   if: always()
