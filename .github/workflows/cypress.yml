@@ -288,19 +288,15 @@ jobs:
           # ================================
           # MESSAGE BODY
           # ================================
-          DESCRIPTION=$(cat <<EOF
-          Test Run #${{ github.run_number }} has $STATUS.
+          DESCRIPTION="Test Run #${{ github.run_number }} has $STATUS.
 
-          📦 Suite : $TEST_SUITE
-          🗓 Executed : $EXEC_TIME
+          📦 Suite : Cypress Automation
           ⏱ Duration : $TEST_DURATION
           $RESULT_LINE
 
           $FAILED_SECTION
 
           Project : ${{ github.repository }}"
-
-          GitHub Actions • Cypress Cloud • Run #${{ github.run_number }} • $EXEC_TIME"
 
           jq -n \
             --arg title "$ICON Automation Report Cypress" \
