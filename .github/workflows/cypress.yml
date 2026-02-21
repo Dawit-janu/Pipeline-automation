@@ -65,10 +65,14 @@ jobs:
             --record \
             --key ${{ secrets.CYPRESS_RECORD_KEY }} \
             --reporter json \
-            --reporter-options output=cypress-report.json
+            --reporter-options output=cypress-report.json \
+            | tee cypress-output.txt
 
-          CYPRESS_EXIT_CODE=$?
+          CYPRESS_EXIT_CODE=${PIPESTATUS[0]}
           echo "CYPRESS_EXIT_CODE=$CYPRESS_EXIT_CODE" >> $GITHUB_ENV
+
+          echo "=== DEBUG FILE ==="
+          ls -lah
 
       # ============================================================
       # ✅ MOCHAWESOME — merge JSON jadi 1 file untuk parsing summary
