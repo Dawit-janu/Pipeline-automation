@@ -142,38 +142,26 @@ jobs:
           OUTPUT_FILE="clean-output.txt"
 
           # ======================================
-          # SOURCE OF TRUTH → ALLURE RESULTS
-          # ======================================
-          TOTAL_TESTS=$(jq -s '[.[].status] | length' allure-results/*-result.json 2>/dev/null || echo 0)
-          PASSED_TESTS=$(jq -s '[.[].status | select(.=="passed")] | length' allure-results/*-result.json 2>/dev/null || echo 0)
-          FAILED_TESTS=$(jq -s '[.[].status | select(.=="failed")] | length' allure-results/*-result.json 2>/dev/null || echo 0)
-
-          # ======================================
           # AMBIL SUMMARY TERAKHIR (PALING BAWAH)
           # ======================================
-          # PASSING=$(grep -oE '[0-9]+ passing' $OUTPUT_FILE | tail -1 | awk '{print $1}')
-          # FAILING=$(grep -oE '[0-9]+ failing' $OUTPUT_FILE | tail -1 | awk '{print $1}')
+          PASSING=$(grep -oE '[0-9]+ passing' $OUTPUT_FILE | tail -1 | awk '{print $1}')
+          FAILING=$(grep -oE '[0-9]+ failing' $OUTPUT_FILE | tail -1 | awk '{print $1}')
 
-          # PASSING=${PASSING:-0}
-          # FAILING=${FAILING:-0}
+          PASSING=${PASSING:-0}
+          FAILING=${FAILING:-0}
 
-          # TOTAL_TESTS=$((PASSING + FAILING))
-          # PASSED_TESTS=$PASSING
-          # FAILED_TESTS=$FAILING
+          TOTAL_TESTS=$((PASSING + FAILING))
+          PASSED_TESTS=$PASSING
+          FAILED_TESTS=$FAILING
 
           # ======================================
           # FAILED TEST LIST (CYPRESS v13 SAFE)
           # ======================================
-          FAILED_TEST_DETAILS=$(jq -r '
-            select(.status=="failed")
-            | .name
-            | "• " + .
-          ' allure-results/*-result.json 2>/dev/null)
-          # ======================================
-          # SPEC / SUITE NAME (TS-Itera logic)
-          # ======================================
-
-          TEST_SUITE=$(ls cypress/e2e | head -1)
+          FAILED_TEST_DETAILS=$(grep "✖" $OUTPUT_FILE \
+            | grep ".cy." \
+            | sed 's/\x1b\[[0-9;]*m//g' \
+            | awk '{print $3}' \
+            | sed 's/^/• /')
 
           # ======================================
           # PASS RATE
@@ -194,7 +182,6 @@ jobs:
 
           echo "TEST_DURATION=${MINUTES}m ${SECONDS}s" >> $GITHUB_ENV
           echo "PASS_RATE=${PASS_RATE}%" >> $GITHUB_ENV
-          echo "TEST_SUITE=$TEST_SUITE" >> $GITHUB_ENV
 
           # 📊 Stats langsung dari merged mochawesome (data fresh run ini)
           # if [ -f results/mochawesome.json ]; then
