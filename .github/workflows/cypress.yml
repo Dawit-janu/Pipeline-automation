@@ -120,6 +120,11 @@ jobs:
           path: allure-report/
           retention-days: 30
 
+      - name: Remove ANSI color codes
+        if: always()
+        run: |
+          sed -r "s/\x1B\[[0-9;]*[mK]//g" cypress-output.txt > clean-output.txt
+
       # ============================================================
       # ✅ EXTRACT SUMMARY — dari mochawesome (fresh, results dibersihkan sebelum run)
       # Duration dari GitHub Actions timestamp
@@ -133,7 +138,8 @@ jobs:
           MINUTES=$((DURATION_SEC / 60))
           SECONDS=$((DURATION_SEC % 60))
 
-          OUTPUT_FILE="cypress-output.txt"
+          # OUTPUT_FILE="cypress-output.txt"
+          OUTPUT_FILE="clean-output.txt"
 
           # ======================================
           # AMBIL SUMMARY TERAKHIR (PALING BAWAH)
@@ -151,8 +157,9 @@ jobs:
           # ======================================
           # FAILED TEST LIST (CYPRESS v13 SAFE)
           # ======================================
-          FAILED_TEST_DETAILS=$(grep -A5 "✖" $OUTPUT_FILE | \
-            grep ".cy.js" | sed 's/^/• /' || true)
+          FAILED_TEST_DETAILS=$(grep "✖" $OUTPUT_FILE \
+            | sed 's/\x1b\[[0-9;]*m//g' \
+            | awk '{print "• " $0}')
 
           # ======================================
           # PASS RATE
