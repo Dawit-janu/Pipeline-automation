@@ -63,11 +63,9 @@ jobs:
           set +e
 
           npx cypress run \
-          --record \
-          --key ${{ secrets.CYPRESS_RECORD_KEY }} \
-          --reporter json \
-          --reporter-options output=cypress-report.json \
-          | tee cypress-output.txt
+            --record \
+            --key ${{ secrets.CYPRESS_RECORD_KEY }} \
+            | tee cypress-output.txt
 
           CYPRESS_EXIT_CODE=${PIPESTATUS[0]}
           echo "CYPRESS_EXIT_CODE=$CYPRESS_EXIT_CODE" >> $GITHUB_ENV
