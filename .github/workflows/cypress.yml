@@ -159,22 +159,20 @@ jobs:
           # ======================================
           # FAILED TEST LIST (CYPRESS v13 SAFE)
           # ======================================
-          FAILED_TEST_DETAILS=$(jq -r '
-              .results[]
-              | .suites[]
-              | .tests[]
-              | select(.state=="failed")
-              | "• " + .title
-            ' cypress-report.json)
+          FAILED_TEST_DETAILS=$(grep "✖" $OUTPUT_FILE \
+            | grep ".cy." \
+            | sed 's/\x1b\[[0-9;]*m//g' \
+            | awk '{print $3}' \
+            | sed 's/^/• /')
 
           # ======================================
           # PASS RATE
           # ======================================
-            if [ "$TOTAL_TESTS" -gt 0 ]; then
-              PASS_RATE=$(echo "scale=1; $PASSED_TESTS * 100 / $TOTAL_TESTS" | bc)
-            else
-              PASS_RATE="0"
-            fi
+          if [ "$TOTAL_TESTS" -gt 0 ]; then
+            PASS_RATE=$(echo "scale=1; $PASSED_TESTS * 100 / $TOTAL_TESTS" | bc)
+          else
+            PASS_RATE="0"
+          fi
 
           echo "TOTAL_TESTS=$TOTAL_TESTS" >> $GITHUB_ENV
           echo "PASSED_TESTS=$PASSED_TESTS" >> $GITHUB_ENV
