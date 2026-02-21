@@ -1,17 +1,22 @@
 name: Cypress Automation Test
 
 on:
+  # 🚀 Push ke main → trigger (merge dari QA branch setelah fix)
   push:
     branches: [ main ]
 
+  # 🔀 Pull Request ke main → trigger saat QA buat PR dari branch fix
   pull_request:
+    branches: [ main ]
 
+  # 🖐 Manual trigger
   workflow_dispatch:
 
   # ✅ STEP 2 — SCHEDULER (DITAMBAHKAN DI SINI)
   schedule:
    #- cron: '0 1 * * *'   # 08:00 WIB (UTC+7)
    #- cron: '40 20 * * *'
+     - cron: '0 18 * * 0-4'
      - cron: '*/5 * * * *'
 
 
@@ -24,9 +29,11 @@ jobs:
       - name: Checkout repo
         uses: actions/checkout@v4
 
-      # ✅ Detect trigger
+      # ✅ Detect trigger + catat waktu start
       - name: Detect trigger
-        run: echo "TRIGGER=${{ github.event_name }}" >> $GITHUB_ENV
+        run: |
+          echo "TRIGGER=${{ github.event_name }}" >> $GITHUB_ENV
+          echo "JOB_START_TIME=$(date +%s)" >> $GITHUB_ENV
 
       # ✅ Dependencies
       - name: Install jq
@@ -102,49 +109,48 @@ jobs:
           retention-days: 30
 
       # ============================================================
-      # ✅ EXTRACT SUMMARY — ambil dari Cypress Cloud API (data akurat)
-      # fallback ke mochawesome jika API tidak tersedia
+      # ✅ EXTRACT SUMMARY
+      # - Stats (total/passed/failed): dari Cypress Cloud API (paling akurat)
+      # - Duration: dari GitHub Actions timestamp (paling reliable)
       # ============================================================
-      - name: Extract test summary from Cypress Cloud API
+      - name: Extract test summary
         if: always()
         run: |
-          # Ambil run terbaru dari Cypress Cloud API
+          # ⏱ Duration dari GitHub Actions timestamp (100% akurat, tidak overflow)
+          JOB_END_TIME=$(date +%s)
+          DURATION_SEC=$(( JOB_END_TIME - JOB_START_TIME ))
+          # Batasi max 3 jam untuk safety
+          if [ "$DURATION_SEC" -gt 10800 ]; then DURATION_SEC=0; fi
+          MINUTES=$((DURATION_SEC / 60))
+          SECONDS=$((DURATION_SEC % 60))
+          echo "⏱ Duration: ${MINUTES}m ${SECONDS}s (dari GitHub timestamps)"
+
+          # 📊 Stats dari Cypress Cloud API (test count akurat, tidak dobel retry)
           API_RESPONSE=$(curl -s \
             -H "Authorization: Bearer ${{ secrets.CYPRESS_RECORD_KEY }}" \
             "https://api.cypress.io/projects/wipkva/runs?perPage=1" 2>/dev/null || echo "")
 
-          # Coba parse dari Cypress Cloud API
           if echo "$API_RESPONSE" | jq -e '.runs[0]' > /dev/null 2>&1; then
             TOTAL_TESTS=$(echo "$API_RESPONSE" | jq '.runs[0].stats.tests // 0')
             FAILED_TESTS=$(echo "$API_RESPONSE" | jq '.runs[0].stats.failures // 0')
             PASSED_TESTS=$(echo "$API_RESPONSE" | jq '.runs[0].stats.passes // 0')
             PENDING_TESTS=$(echo "$API_RESPONSE" | jq '.runs[0].stats.pending // 0')
-            DURATION_MS=$(echo "$API_RESPONSE"  | jq '.runs[0].stats.wallClockDuration // 0')
-            echo "📡 Stats dari Cypress Cloud API"
+            echo "📡 Stats dari Cypress Cloud API: total=$TOTAL_TESTS passed=$PASSED_TESTS failed=$FAILED_TESTS"
           elif [ -f results/mochawesome.json ]; then
-            # Fallback: deduplicate test dari mochawesome (ambil unique test titles)
             TOTAL_TESTS=$(jq '[ .. | objects | select(.fullTitle?) | .fullTitle ] | unique | length' results/mochawesome.json)
             FAILED_TESTS=$(jq '[ .. | objects | select(.fail == true and .fullTitle?) | .fullTitle ] | unique | length' results/mochawesome.json)
             PASSED_TESTS=$(jq '[ .. | objects | select(.pass == true and .fullTitle?) | .fullTitle ] | unique | length' results/mochawesome.json)
             PENDING_TESTS=$(jq '[ .. | objects | select(.pending == true and .fullTitle?) | .fullTitle ] | unique | length' results/mochawesome.json)
-            # Duration: ambil max (durasi run terpanjang, bukan total semua spec)
-            DURATION_MS=$(jq '[.. | objects | select(.duration?) | .duration] | max // 0' results/mochawesome.json)
             echo "📄 Stats dari mochawesome (fallback)"
           else
-            TOTAL_TESTS=0; FAILED_TESTS=0; PASSED_TESTS=0; PENDING_TESTS=0; DURATION_MS=0
+            TOTAL_TESTS=0; FAILED_TESTS=0; PASSED_TESTS=0; PENDING_TESTS=0
           fi
 
-          # Guard: pastikan semua nilai adalah angka valid
-          for VAR in TOTAL_TESTS FAILED_TESTS PASSED_TESTS PENDING_TESTS DURATION_MS; do
+          # Guard: pastikan semua nilai angka valid
+          for VAR in TOTAL_TESTS FAILED_TESTS PASSED_TESTS PENDING_TESTS; do
             VAL="${!VAR}"
-            if ! [[ "$VAL" =~ ^[0-9]+$ ]]; then
-              declare $VAR=0
-            fi
+            if ! [[ "$VAL" =~ ^[0-9]+$ ]]; then declare $VAR=0; fi
           done
-
-          DURATION_SEC=$((DURATION_MS / 1000))
-          MINUTES=$((DURATION_SEC / 60))
-          SECONDS=$((DURATION_SEC % 60))
 
           # Pass rate
           if [ "$TOTAL_TESTS" -gt 0 ]; then
@@ -166,14 +172,30 @@ jobs:
       - name: Extract failed tests
         if: always()
         run: |
-          if [ -f results/mochawesome.json ]; then
-            # unique[] → deduplicate, .. → traverse semua nested level
+          # ✅ Ambil failed list dari Cypress Cloud API (sinkron dengan dashboard)
+          API_RESPONSE=$(curl -s \
+            -H "Authorization: Bearer ${{ secrets.CYPRESS_RECORD_KEY }}" \
+            "https://api.cypress.io/projects/wipkva/runs?perPage=1" 2>/dev/null || echo "")
+
+          if echo "$API_RESPONSE" | jq -e '.runs[0]' > /dev/null 2>&1; then
+            # Ambil failed spec/test dari Cypress Cloud API
+            FAILED_TEST_DETAILS=$(echo "$API_RESPONSE" | jq -r '
+              .runs[0].specs[]?
+              | select(.stats.failures > 0)
+              | .spec.relative
+              | "• " + .
+            ' 2>/dev/null || echo "")
+            echo "📡 Failed list dari Cypress Cloud API"
+          fi
+
+          # Fallback ke mochawesome jika API gagal atau kosong
+          if [ -z "$FAILED_TEST_DETAILS" ] && [ -f results/mochawesome.json ]; then
             FAILED_TEST_DETAILS=$(jq -r '
               [ .. | objects | select(.fail == true and .fullTitle?) | .fullTitle ] | unique[] | "• " + .
             ' results/mochawesome.json 2>/dev/null || echo "")
-          else
-            FAILED_TEST_DETAILS=""
+            echo "📄 Failed list dari mochawesome (fallback)"
           fi
+
           echo "FAILED_TEST_DETAILS<<EOF" >> $GITHUB_ENV
           echo "$FAILED_TEST_DETAILS"     >> $GITHUB_ENV
           echo "EOF"                      >> $GITHUB_ENV
@@ -193,8 +215,8 @@ jobs:
 
           case "$TRIGGER" in
             schedule)          TRIGGER_LABEL="⏰ Scheduled" ;;
-            push)              TRIGGER_LABEL="🚀 Push" ;;
-            pull_request)      TRIGGER_LABEL="🔀 Pull Request" ;;
+            push)              TRIGGER_LABEL="🚀 Push to main" ;;
+            pull_request)      TRIGGER_LABEL="🔀 Pull Request (Fix)" ;;
             workflow_dispatch) TRIGGER_LABEL="🖐 Manual" ;;
             *)                 TRIGGER_LABEL="$TRIGGER" ;;
           esac
@@ -202,8 +224,18 @@ jobs:
           RUN_URL="https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}"
           CLOUD_URL="https://cloud.cypress.io/projects/wipkva/runs"
           ARTIFACT_URL="${RUN_URL}#artifacts"
+          PR_URL="https://github.com/${{ github.repository }}/pull/${{ github.event.pull_request.number }}"
 
-          # Format failed tests + link ke Cypress Cloud di bagian bawah list
+          # Info konteks PR jika trigger dari pull_request
+          if [ "$TRIGGER" = "pull_request" ]; then
+            CONTEXT_INFO="PR #${{ github.event.pull_request.number }} — ${{ github.event.pull_request.title }}"
+            CONTEXT_URL="$PR_URL"
+          else
+            CONTEXT_INFO="${{ github.ref_name }}"
+            CONTEXT_URL="$RUN_URL"
+          fi
+
+          # Format failed tests + link ke Cypress Cloud
           if [ -n "$FAILED_TEST_DETAILS" ] && [ "$FAILED_TEST_DETAILS" != "" ]; then
             FAILED_DISPLAY="${FAILED_TEST_DETAILS}
 
@@ -217,6 +249,8 @@ jobs:
             --arg runNumber     "${{ github.run_number }}" \
             --arg runAttempt    "${{ github.run_attempt }}" \
             --arg branch        "${{ github.ref_name }}" \
+            --arg contextInfo   "$CONTEXT_INFO" \
+            --arg contextUrl    "$CONTEXT_URL" \
             --arg status        "$STATUS" \
             --arg total         "$TOTAL_TESTS" \
             --arg passed        "$PASSED_TESTS" \
@@ -238,7 +272,7 @@ jobs:
                 { name: "🔀 Trigger",    value: $trigger,                                          inline: true },
                 { name: "🏃 Run",        value: ("#" + $runNumber + " · Attempt " + $runAttempt), inline: true },
                 { name: "⏱ Duration",    value: $duration,                                         inline: true },
-                { name: "🌿 Branch",     value: $branch,                                           inline: true },
+                { name: "🌿 Branch/PR",  value: ("[" + $contextInfo + "](" + $contextUrl + ")"),   inline: true },
                 { name: "📊 Pass Rate",  value: $passRate,                                         inline: true },
                 { name: "📦 Allure",     value: ("[Download →](" + $artifactUrl + ")"),            inline: true },
                 { name: "📋 Total",      value: $total,                                            inline: true },
