@@ -65,10 +65,9 @@ jobs:
           npx cypress run \
             --record \
             --key ${{ secrets.CYPRESS_RECORD_KEY }} \
-            --reporter mochawesome \
-            --reporter-options "reportDir=results,overwrite=false,html=false,json=true"
+            | tee cypress-output.txt
 
-          CYPRESS_EXIT_CODE=$?
+          CYPRESS_EXIT_CODE=${PIPESTATUS[0]}
 
           echo "CYPRESS_EXIT_CODE=$CYPRESS_EXIT_CODE" >> $GITHUB_ENV
           echo "Cypress exit code: $CYPRESS_EXIT_CODE"
@@ -79,29 +78,29 @@ jobs:
       # ============================================================
       # ✅ MOCHAWESOME — merge JSON jadi 1 file untuk parsing summary
       # ============================================================
-      - name: Remove empty mochawesome files
-        if: always()
-        run: find results -type f -name "*.json" -size 0 -delete || true
+      # - name: Remove empty mochawesome files
+      #   if: always()
+      #   run: find results -type f -name "*.json" -size 0 -delete || true
 
-      - name: Merge mochawesome reports
-        if: always()
-        run: |
-          echo "=== File di results/ ==="
-          ls -lah results/ || echo "folder kosong"
+      # - name: Merge mochawesome reports
+      #   if: always()
+      #   run: |
+      #     echo "=== File di results/ ==="
+      #     ls -lah results/ || echo "folder kosong"
 
-          JSON_FILES=$(find results -name "mochawesome_*.json" -size +0c 2>/dev/null)
-          echo "=== JSON files ditemukan ==="
-          echo "$JSON_FILES"
+      #     JSON_FILES=$(find results -name "mochawesome_*.json" -size +0c 2>/dev/null)
+      #     echo "=== JSON files ditemukan ==="
+      #     echo "$JSON_FILES"
 
-          if [ -n "$JSON_FILES" ]; then
-            npx mochawesome-merge results/mochawesome_*.json > results/mochawesome.json
-            echo "✅ Mochawesome merged"
-            cat results/mochawesome.json | jq '.stats'
-          else
-            echo "⚠️ No mochawesome files found"
-            echo '{"stats":{"tests":0,"passes":0,"failures":0,"pending":0,"duration":0},"results":[]}' \
-              > results/mochawesome.json
-          fi
+      #     if [ -n "$JSON_FILES" ]; then
+      #       npx mochawesome-merge results/mochawesome_*.json > results/mochawesome.json
+      #       echo "✅ Mochawesome merged"
+      #       cat results/mochawesome.json | jq '.stats'
+      #     else
+      #       echo "⚠️ No mochawesome files found"
+      #       echo '{"stats":{"tests":0,"passes":0,"failures":0,"pending":0,"duration":0},"results":[]}' \
+      #         > results/mochawesome.json
+      #     fi
 
       # ============================================================
       # ✅ ALLURE — generate report, simpan sebagai artifact 30 hari
@@ -140,28 +139,44 @@ jobs:
           MINUTES=$((DURATION_SEC / 60))
           SECONDS=$((DURATION_SEC % 60))
 
-          # 📊 Stats langsung dari merged mochawesome (data fresh run ini)
-          if [ -f results/mochawesome.json ]; then
-            TOTAL_TESTS=$(jq '.stats.tests // 0' results/mochawesome.json 2>/dev/null || echo 0)
-            FAILED_TESTS=$(jq '.stats.failures // 0' results/mochawesome.json 2>/dev/null || echo 0)
-            PASSED_TESTS=$(jq '.stats.passes // 0' results/mochawesome.json 2>/dev/null || echo 0)
-            PENDING_TESTS=$(jq '.stats.pending // 0' results/mochawesome.json 2>/dev/null || echo 0)
-          else
-            TOTAL_TESTS=0; FAILED_TESTS=0; PASSED_TESTS=0; PENDING_TESTS=0
-          fi
+          TOTAL_TESTS=$(grep -oP 'Tests:\s+\K\d+' cypress-output.txt | tail -1)
+          PASSED_TESTS=$(grep -oP 'Passing:\s+\K\d+' cypress-output.txt | tail -1)
+          FAILED_TESTS=$(grep -oP 'Failing:\s+\K\d+' cypress-output.txt | tail -1)
+          PENDING_TESTS=$(grep -oP 'Pending:\s+\K\d+' cypress-output.txt | tail -1)
 
-          # Bersihkan quote dari output jq
-          TOTAL_TESTS=$(echo "$TOTAL_TESTS" | tr -d '"')
-          FAILED_TESTS=$(echo "$FAILED_TESTS" | tr -d '"')
-          PASSED_TESTS=$(echo "$PASSED_TESTS" | tr -d '"')
-          PENDING_TESTS=$(echo "$PENDING_TESTS" | tr -d '"')
+          TOTAL_TESTS=${TOTAL_TESTS:-0}
+          PASSED_TESTS=${PASSED_TESTS:-0}
+          FAILED_TESTS=${FAILED_TESTS:-0}
+          PENDING_TESTS=${PENDING_TESTS:-0}
 
-          # Pass rate
-          if [ "${TOTAL_TESTS:-0}" -gt 0 ] 2>/dev/null; then
+          if [ "$TOTAL_TESTS" -gt 0 ]; then
             PASS_RATE=$(echo "scale=1; $PASSED_TESTS * 100 / $TOTAL_TESTS" | bc)
           else
             PASS_RATE="0"
           fi
+
+          # 📊 Stats langsung dari merged mochawesome (data fresh run ini)
+          # if [ -f results/mochawesome.json ]; then
+          #   TOTAL_TESTS=$(jq '.stats.tests // 0' results/mochawesome.json 2>/dev/null || echo 0)
+          #   FAILED_TESTS=$(jq '.stats.failures // 0' results/mochawesome.json 2>/dev/null || echo 0)
+          #   PASSED_TESTS=$(jq '.stats.passes // 0' results/mochawesome.json 2>/dev/null || echo 0)
+          #   PENDING_TESTS=$(jq '.stats.pending // 0' results/mochawesome.json 2>/dev/null || echo 0)
+          # else
+          #   TOTAL_TESTS=0; FAILED_TESTS=0; PASSED_TESTS=0; PENDING_TESTS=0
+          # fi
+
+          # Bersihkan quote dari output jq
+          # TOTAL_TESTS=$(echo "$TOTAL_TESTS" | tr -d '"')
+          # FAILED_TESTS=$(echo "$FAILED_TESTS" | tr -d '"')
+          # PASSED_TESTS=$(echo "$PASSED_TESTS" | tr -d '"')
+          # PENDING_TESTS=$(echo "$PENDING_TESTS" | tr -d '"')
+
+          # Pass rate
+          # if [ "${TOTAL_TESTS:-0}" -gt 0 ] 2>/dev/null; then
+          #   PASS_RATE=$(echo "scale=1; $PASSED_TESTS * 100 / $TOTAL_TESTS" | bc)
+          # else
+          #   PASS_RATE="0"
+          # fi
 
           echo "TOTAL_TESTS=$TOTAL_TESTS"              >> $GITHUB_ENV
           echo "FAILED_TESTS=$FAILED_TESTS"            >> $GITHUB_ENV
@@ -171,21 +186,32 @@ jobs:
           echo "PASS_RATE=${PASS_RATE}%"               >> $GITHUB_ENV
           echo "Total: $TOTAL_TESTS | Passed: $PASSED_TESTS | Failed: $FAILED_TESTS | Duration: ${MINUTES}m ${SECONDS}s"
 
-      - name: Extract failed tests
+      # - name: Extract failed tests
+      #   if: always()
+      #   run: |
+      #     FAILED_TEST_DETAILS=""
+
+      #     # ✅ Ambil failed test dari mochawesome (fresh, sinkron dengan run ini)
+      #     if [ -f results/mochawesome.json ]; then
+      #       FAILED_TEST_DETAILS=$(jq -r \
+      #         '[ .. | objects | select(.fail == true and .fullTitle?) | .fullTitle ] | unique[] | "• " + .' \
+      #         results/mochawesome.json 2>/dev/null || echo "")
+      #     fi
+
+      #     echo "FAILED_TEST_DETAILS<<EOF" >> $GITHUB_ENV
+      #     echo "$FAILED_TEST_DETAILS"     >> $GITHUB_ENV
+      #     echo "EOF"                      >> $GITHUB_ENV
+
+      - name: Prepare failed display
         if: always()
         run: |
-          FAILED_TEST_DETAILS=""
-
-          # ✅ Ambil failed test dari mochawesome (fresh, sinkron dengan run ini)
-          if [ -f results/mochawesome.json ]; then
-            FAILED_TEST_DETAILS=$(jq -r \
-              '[ .. | objects | select(.fail == true and .fullTitle?) | .fullTitle ] | unique[] | "• " + .' \
-              results/mochawesome.json 2>/dev/null || echo "")
+          if [ "$FAILED_TESTS" != "0" ]; then
+            FAILED_DISPLAY="❌ Ada test yang gagal — lihat Cypress Cloud"
+          else
+            FAILED_DISPLAY="✅ Semua test passed!"
           fi
 
-          echo "FAILED_TEST_DETAILS<<EOF" >> $GITHUB_ENV
-          echo "$FAILED_TEST_DETAILS"     >> $GITHUB_ENV
-          echo "EOF"                      >> $GITHUB_ENV
+          echo "FAILED_DISPLAY=$FAILED_DISPLAY" >> $GITHUB_ENV
 
       # ============================================================
       # ✅ DISCORD NOTIFICATION
