@@ -135,35 +135,22 @@ jobs:
       # ✅ EXTRACT SUMMARY — dari mochawesome (fresh, results dibersihkan sebelum run)
       # Duration dari GitHub Actions timestamp
       # ============================================================
-      - name: Prepare Summary
+      - name: Extract test summary
         if: always()
         run: |
-          JOB_END_TIME=$(date +%s)
-          DURATION=$(( JOB_END_TIME - JOB_START_TIME ))
-          MIN=$((DURATION / 60))
-          SEC=$((DURATION % 60))
+          TOTAL_TESTS=$(jq '.total' cypress-summary.json)
+          PASSED_TESTS=$(jq '.passed' cypress-summary.json)
+          FAILED_TESTS=$(jq '.failed' cypress-summary.json)
 
-          echo "TEST_DURATION=${MIN}m ${SEC}s" >> $GITHUB_ENV
+          FAILED_LIST=$(jq -r '.failures[]?' cypress-summary.json | sed 's/^/• /')
 
-          if [ "$CYPRESS_EXIT_CODE" != "0" ]; then
-            STATUS="FAILED"
-            ICON="❌"
-            COLOR=15158332
-            RESULT_TEXT="❌ Ada test gagal — lihat Cypress Cloud"
-            PASS_RATE="0%"
-          else
-            STATUS="SUCCESS"
-            ICON="✅"
-            COLOR=3066993
-            RESULT_TEXT="✅ Semua test passed!"
-            PASS_RATE="100%"
-          fi
+          echo "TOTAL_TESTS=$TOTAL_TESTS" >> $GITHUB_ENV
+          echo "PASSED_TESTS=$PASSED_TESTS" >> $GITHUB_ENV
+          echo "FAILED_TESTS=$FAILED_TESTS" >> $GITHUB_ENV
 
-          echo "STATUS=$STATUS" >> $GITHUB_ENV
-          echo "ICON=$ICON" >> $GITHUB_ENV
-          echo "COLOR=$COLOR" >> $GITHUB_ENV
-          echo "RESULT_TEXT=$RESULT_TEXT" >> $GITHUB_ENV
-          echo "PASS_RATE=$PASS_RATE" >> $GITHUB_ENV
+          echo "FAILED_LIST<<EOF" >> $GITHUB_ENV
+          echo "$FAILED_LIST" >> $GITHUB_ENV
+          echo "EOF" >> $GITHUB_ENV
 
           # 📊 Stats langsung dari merged mochawesome (data fresh run ini)
           # if [ -f results/mochawesome.json ]; then
@@ -258,11 +245,15 @@ jobs:
               url: $cloud,
               color: $color,
               fields: [
-                { name: "🔀 Trigger", value: $trigger, inline: true },
-                { name: "⏱ Duration", value: $duration, inline: true },
-                { name: "📊 Pass Rate", value: $passRate, inline: true },
-                { name: "📦 Allure", value: ("[Download →](" + $artifact + ")"), inline: true },
-                { name: "Result", value: $result }
+                { "name": "🏃 Run", "value": "#${{ github.run_number }}", "inline": true },
+                { "name": "🌿 Branch", "value": "${{ github.ref_name }}", "inline": true },
+                { "name": "📦 Repository", "value": "${{ github.repository }}", "inline": true },
+
+                { "name": "📋 Total", "value": $total, "inline": true },
+                { "name": "✅ Passed", "value": $passed, "inline": true },
+                { "name": "❌ Failed", "value": $failed, "inline": true },
+
+                { "name": "❗ Failed Tests", "value": $failedList }
               ],
               footer: { text: "GitHub Actions • Cypress Cloud" },
               timestamp: (now | todateiso8601)
