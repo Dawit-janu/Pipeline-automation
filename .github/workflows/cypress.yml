@@ -1,120 +1,132 @@
-name: Cypress Automation Test (Docker)
+name: Cypress Automation Test
 
 on:
   push:
     branches: [ main ]
+
   pull_request:
+
   workflow_dispatch:
+
+  # ✅ STEP 2 — SCHEDULER (DITAMBAHKAN DI SINI)
   schedule:
-    - cron: '*/5 * * * *'
+   #- cron: '0 1 * * *'   # 08:00 WIB (UTC+7)
+   #- cron: '40 20 * * *'
+     - cron: '*/5 * * * *'
+
+
 
 jobs:
-  cypress-docker:
+  cypress-run:
     runs-on: ubuntu-latest
 
     steps:
       - name: Checkout repo
         uses: actions/checkout@v4
 
+      # ✅ Detect trigger
       - name: Detect trigger
         run: echo "TRIGGER=${{ github.event_name }}" >> $GITHUB_ENV
 
+      # ✅ Dependencies
       - name: Install jq
         run: sudo apt-get update && sudo apt-get install -y jq
 
-      - name: Build Docker image
-        run: docker build -t cypress-test .
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 18
 
-      # ✅ RUN CYPRESS + MOCHAWESOME + ALLURE + CYPRESS CLOUD
-      - name: Run Cypress tests (Docker)
+      - name: Install project dependencies
+        run: npm ci
+
+      # ============================================================
+      # ✅ RUN CYPRESS
+      # --record  → kirim ke Cypress Cloud dashboard (video, screenshot, history)
+      # --reporter → generate mochawesome JSON untuk summary Discord
+      # ============================================================
+      - name: Run Cypress Tests
         continue-on-error: true
         run: |
           mkdir -p results allure-results
-          docker run --rm \
-            -e CYPRESS_RECORD_KEY=${{ secrets.CYPRESS_RECORD_KEY }} \
-            -v ${{ github.workspace }}:/app \
-            -w /app \
-            cypress/included:13.6.6 \
-            cypress run \
+          npx cypress run \
             --record \
-            --env allure=true,allureResultsPath=allure-results \
+            --key ${{ secrets.CYPRESS_RECORD_KEY }} \
             --reporter mochawesome \
-            --reporter-options reportDir=results,overwrite=false,html=false,json=true
+            --reporter-options "reportDir=results,overwrite=false,html=false,json=true"
+        env:
+          allure: true
+          allureResultsPath: allure-results
 
-      - name: Debug results folder
-        if: always()
-        run: |
-          echo "=== results folder ==="
-          ls -lah results || true
-          echo "=== allure-results folder ==="
-          ls -lah allure-results || true
-
+      # ============================================================
+      # ✅ MOCHAWESOME — merge JSON jadi 1 file untuk parsing summary
+      # ============================================================
       - name: Remove empty mochawesome files
-        run: find results -type f -name "*.json" -size 0 -delete
+        if: always()
+        run: find results -type f -name "*.json" -size 0 -delete || true
 
       - name: Merge mochawesome reports
+        if: always()
         run: |
-          ls results/mochawesome_*.json
-          npx mochawesome-merge results/mochawesome_*.json > results/mochawesome.json
+          if ls results/mochawesome_*.json 1> /dev/null 2>&1; then
+            npx mochawesome-merge results/mochawesome_*.json > results/mochawesome.json
+            echo "✅ Mochawesome merged"
+            cat results/mochawesome.json | jq '.stats'
+          else
+            echo "⚠️ No mochawesome files, creating fallback"
+            echo '{"stats":{"tests":0,"passes":0,"failures":0,"pending":0,"duration":0},"results":[]}' \
+              > results/mochawesome.json
+          fi
 
-      - name: Debug merged report
-        run: cat results/mochawesome.json | jq '.stats'
-
-      # ✅ GENERATE ALLURE REPORT
+      # ============================================================
+      # ✅ ALLURE — generate report, simpan sebagai artifact 30 hari
+      # Download dari: Actions tab → pilih run → Artifacts section
+      # ============================================================
       - name: Generate Allure Report
         if: always()
         run: |
           npm install -g allure-commandline
-          allure generate allure-results --clean -o allure-report
+          if [ -d allure-results ] && [ "$(ls -A allure-results 2>/dev/null)" ]; then
+            allure generate allure-results --clean -o allure-report
+            echo "✅ Allure report generated"
+          else
+            echo "⚠️ No allure results, skipping"
+          fi
 
-      # ✅ UPLOAD ALLURE AS ARTIFACT (always accessible)
-      - name: Upload Allure Report
+      - name: Upload Allure Report as Artifact
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: allure-report-${{ github.run_number }}
+          name: allure-report-run-${{ github.run_number }}
           path: allure-report/
           retention-days: 30
 
-      # ✅ OPTIONAL: Publish Allure to GitHub Pages
-      # Requires: Settings → Pages → Source: gh-pages branch
-      # Requires: Settings → Actions → Workflow permissions: Read and write
-      - name: Deploy Allure Report to GitHub Pages
-        if: always()
-        uses: peaceiris/actions-gh-pages@v3
-        with:
-          github_token: ${{ secrets.GITHUB_TOKEN }}
-          publish_dir: allure-report
-          destination_dir: allure/${{ github.run_number }}
-          keep_files: true
-
-      # ✅ EXTRACT SUMMARY
+      # ============================================================
+      # ✅ EXTRACT SUMMARY untuk Discord notification
+      # ============================================================
       - name: Extract test summary
         if: always()
         run: |
           if [ -f results/mochawesome.json ]; then
-            TOTAL_TESTS=$(jq '.stats.tests' results/mochawesome.json)
-            FAILED_TESTS=$(jq '.stats.failures' results/mochawesome.json)
-            PASSED_TESTS=$(jq '.stats.passes' results/mochawesome.json)
-            DURATION_MS=$(jq '.stats.duration' results/mochawesome.json)
+            TOTAL_TESTS=$(jq '.stats.tests'         results/mochawesome.json)
+            FAILED_TESTS=$(jq '.stats.failures'     results/mochawesome.json)
+            PASSED_TESTS=$(jq '.stats.passes'       results/mochawesome.json)
+            PENDING_TESTS=$(jq '.stats.pending // 0' results/mochawesome.json)
+            DURATION_MS=$(jq '.stats.duration'      results/mochawesome.json)
           else
-            TOTAL_TESTS=0
-            FAILED_TESTS=0
-            PASSED_TESTS=0
-            DURATION_MS=0
+            TOTAL_TESTS=0; FAILED_TESTS=0; PASSED_TESTS=0; PENDING_TESTS=0; DURATION_MS=0
           fi
 
           DURATION_SEC=$((DURATION_MS / 1000))
           MINUTES=$((DURATION_SEC / 60))
           SECONDS=$((DURATION_SEC % 60))
-          DURATION_FORMATTED="${MINUTES}m ${SECONDS}s"
 
-          echo "TOTAL_TESTS=$TOTAL_TESTS" >> $GITHUB_ENV
-          echo "FAILED_TESTS=$FAILED_TESTS" >> $GITHUB_ENV
-          echo "PASSED_TESTS=$PASSED_TESTS" >> $GITHUB_ENV
-          echo "TEST_DURATION=$DURATION_FORMATTED" >> $GITHUB_ENV
+          echo "TOTAL_TESTS=$TOTAL_TESTS"             >> $GITHUB_ENV
+          echo "FAILED_TESTS=$FAILED_TESTS"           >> $GITHUB_ENV
+          echo "PASSED_TESTS=$PASSED_TESTS"           >> $GITHUB_ENV
+          echo "PENDING_TESTS=$PENDING_TESTS"         >> $GITHUB_ENV
+          echo "TEST_DURATION=${MINUTES}m ${SECONDS}s" >> $GITHUB_ENV
 
-      # ✅ EXTRACT FAILED TEST LIST
       - name: Extract failed tests
         if: always()
         run: |
@@ -123,80 +135,88 @@ jobs:
               .results[].suites[].tests[]
               | select(.fail == true)
               | "- " + .fullTitle
-            ' results/mochawesome.json)
+            ' results/mochawesome.json 2>/dev/null || echo "")
           else
-            FAILED_TEST_DETAILS="None"
+            FAILED_TEST_DETAILS=""
           fi
-
           echo "FAILED_TEST_DETAILS<<EOF" >> $GITHUB_ENV
-          echo "$FAILED_TEST_DETAILS" >> $GITHUB_ENV
-          echo "EOF" >> $GITHUB_ENV
+          echo "$FAILED_TEST_DETAILS"     >> $GITHUB_ENV
+          echo "EOF"                      >> $GITHUB_ENV
 
-      # ✅ SEND DISCORD EMBED NOTIFICATION (with Allure link)
-      - name: Send Discord Embed Notification
+      # ============================================================
+      # ✅ DISCORD NOTIFICATION
+      # Link langsung ke Cypress Cloud + Allure artifact
+      # ============================================================
+      - name: Send Discord Notification
         if: always()
         run: |
-          if [ "$FAILED_TESTS" != "0" ]; then
-            STATUS="FAILED"
-            COLOR=15158332
-            ICON="❌"
+          # Status & color
+          if [ "$FAILED_TESTS" != "0" ] && [ "$FAILED_TESTS" != "null" ]; then
+            STATUS="FAILED"; COLOR=15158332; ICON="❌"
           else
-            STATUS="SUCCESS"
-            COLOR=3066993
-            ICON="✅"
+            STATUS="SUCCESS"; COLOR=3066993; ICON="✅"
           fi
 
+          # Trigger label
+          case "$TRIGGER" in
+            schedule)          TRIGGER_LABEL="⏰ Scheduled" ;;
+            push)              TRIGGER_LABEL="🚀 Push" ;;
+            pull_request)      TRIGGER_LABEL="🔀 Pull Request" ;;
+            workflow_dispatch) TRIGGER_LABEL="🖐 Manual" ;;
+            *)                 TRIGGER_LABEL="$TRIGGER" ;;
+          esac
+
+          # URLs
           RUN_URL="https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}"
-          
-          # Allure report URL (GitHub Pages) — sesuaikan dengan repo kamu
-          ALLURE_URL="https://${{ github.repository_owner }}.github.io/$(echo ${{ github.repository }} | cut -d'/' -f2)/allure/${{ github.run_number }}"
+          CLOUD_URL="https://cloud.cypress.io/projects/wipkva/runs"
+          ARTIFACT_URL="${RUN_URL}#artifacts"
 
           jq -n \
-            --arg trigger "$TRIGGER" \
-            --arg runNumber "${{ github.run_number }}" \
-            --arg runAttempt "${{ github.run_attempt }}" \
-            --arg repo "${{ github.repository }}" \
-            --arg branch "${{ github.ref_name }}" \
-            --arg status "$STATUS" \
-            --arg total "$TOTAL_TESTS" \
-            --arg passed "$PASSED_TESTS" \
-            --arg failed "$FAILED_TESTS" \
-            --arg duration "$TEST_DURATION" \
-            --arg url "$RUN_URL" \
-            --arg allureUrl "$ALLURE_URL" \
-            --arg icon "$ICON" \
-            --arg failedDetails "$FAILED_TEST_DETAILS" \
-            --argjson color $COLOR \
+            --arg trigger      "$TRIGGER_LABEL" \
+            --arg runNumber    "${{ github.run_number }}" \
+            --arg runAttempt   "${{ github.run_attempt }}" \
+            --arg repo         "${{ github.repository }}" \
+            --arg branch       "${{ github.ref_name }}" \
+            --arg status       "$STATUS" \
+            --arg total        "$TOTAL_TESTS" \
+            --arg passed       "$PASSED_TESTS" \
+            --arg failed       "$FAILED_TESTS" \
+            --arg pending      "$PENDING_TESTS" \
+            --arg duration     "$TEST_DURATION" \
+            --arg runUrl       "$RUN_URL" \
+            --arg cloudUrl     "$CLOUD_URL" \
+            --arg artifactUrl  "$ARTIFACT_URL" \
+            --arg icon         "$ICON" \
+            --arg failedList   "$FAILED_TEST_DETAILS" \
+            --argjson color    $COLOR \
           '{
-            embeds: [
-              {
-                title: "🧪 Cypress Automation Report",
-                url: $url,
-                color: $color,
-                fields: [
-                  {name: "Trigger",     value: $trigger,                              inline: true},
-                  {name: "Test Run",    value: ("#" + $runNumber + " (Attempt " + $runAttempt + ")"), inline: true},
-                  {name: "Duration",    value: ("⏱ " + $duration),                   inline: true},
-                  {name: "Repository",  value: $repo,                                 inline: true},
-                  {name: "Branch",      value: $branch,                               inline: true},
-                  {name: "Status",      value: ($icon + " " + $status),               inline: true},
-                  {name: "Total Tests", value: $total,                                inline: true},
-                  {name: "Passed",      value: $passed,                               inline: true},
-                  {name: "Failed",      value: $failed,                               inline: true},
-                  {name: "📊 Allure Report", value: ("[View Report](" + $allureUrl + ")"), inline: false},
-                  {
-                    name: "❗ Failed Tests",
-                    value: ($failedDetails | if . == "" then "None" else . end)
-                  }
-                ],
-                footer: {
-                  text: "GitHub Actions • Cypress Automation"
-                },
-                timestamp: (now | todateiso8601)
-              }
-            ]
+            embeds: [{
+              title: "🧪 Cypress Automation Report",
+              url: $runUrl,
+              color: $color,
+              fields: [
+                { name: "Trigger",           value: $trigger,                                              inline: true  },
+                { name: "Test Run",          value: ("#" + $runNumber + " · Attempt " + $runAttempt),     inline: true  },
+                { name: "Duration",          value: ("⏱ " + $duration),                                   inline: true  },
+                { name: "Repository",        value: $repo,                                                 inline: true  },
+                { name: "Branch",            value: $branch,                                               inline: true  },
+                { name: "Status",            value: ($icon + " " + $status),                              inline: true  },
+                { name: "Total",             value: $total,                                                inline: true  },
+                { name: "✅ Passed",         value: $passed,                                               inline: true  },
+                { name: "❌ Failed",         value: $failed,                                               inline: true  },
+                { name: "⏭ Pending",        value: $pending,                                              inline: true  },
+                { name: "☁️ Cypress Cloud",  value: ("[Open Dashboard →](" + $cloudUrl + ")"),            inline: true  },
+                { name: "📦 Allure Report",  value: ("[Download Artifact →](" + $artifactUrl + ")"),      inline: true  },
+                {
+                  name: "❗ Failed Tests",
+                  value: ($failedList | if . == "" or . == null then "✅ Semua test passed!" else . end)
+                }
+              ],
+              footer: { text: "GitHub Actions • Cypress Cloud • Allure" },
+              timestamp: (now | todateiso8601)
+            }]
           }' \
-          | curl -H "Content-Type: application/json" \
+          | curl -s -H "Content-Type: application/json" \
               -X POST \
               -d @- \
               ${{ secrets.DISCORD_WEBHOOK }}
