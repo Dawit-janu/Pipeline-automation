@@ -58,13 +58,20 @@ jobs:
           echo "CI_BUILD_ID=${{ github.repository }}-${{ github.run_id }}-${{ github.run_attempt }}" >> $GITHUB_ENV
 
       - name: Run Cypress Tests
-        continue-on-error: true
+        id: cypress
         run: |
+          set +e
+
           npx cypress run \
             --record \
             --key ${{ secrets.CYPRESS_RECORD_KEY }} \
             --reporter mochawesome \
             --reporter-options "reportDir=results,overwrite=false,html=false,json=true"
+
+          CYPRESS_EXIT_CODE=$?
+
+          echo "CYPRESS_EXIT_CODE=$CYPRESS_EXIT_CODE" >> $GITHUB_ENV
+          echo "Cypress exit code: $CYPRESS_EXIT_CODE"
         env:
           allure: true
           allureResultsPath: allure-results
@@ -187,10 +194,14 @@ jobs:
       - name: Send Discord Notification
         if: always()
         run: |
-          if [ "$FAILED_TESTS" != "0" ] && [ "$FAILED_TESTS" != "null" ]; then
-            STATUS="FAILED"; COLOR=15158332; ICON="❌"
+          if [ "$CYPRESS_EXIT_CODE" != "0" ]; then
+            STATUS="FAILED"
+            COLOR=15158332
+            ICON="❌"
           else
-            STATUS="SUCCESS"; COLOR=3066993; ICON="✅"
+            STATUS="SUCCESS"
+            COLOR=3066993
+            ICON="✅"
           fi
 
           case "$TRIGGER" in
