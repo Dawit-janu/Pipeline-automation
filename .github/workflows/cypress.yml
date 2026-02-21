@@ -28,15 +28,13 @@ jobs:
       - name: Checkout repo
         uses: actions/checkout@v4
 
-      # ✅ Detect trigger + catat waktu start
-      - name: Detect trigger
+      - name: Detect trigger & start time
         run: |
           echo "TRIGGER=${{ github.event_name }}" >> $GITHUB_ENV
-          echo "JOB_START_TIME=$(date +%s)" >> $GITHUB_ENV
+          echo "JOB_START_TIME=$(date +%s)"       >> $GITHUB_ENV
 
-      # ✅ Dependencies
-      - name: Install jq
-        run: sudo apt-get update && sudo apt-get install -y jq
+      - name: Install dependencies
+        run: sudo apt-get update && sudo apt-get install -y jq bc
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -47,272 +45,211 @@ jobs:
         run: npm ci
 
       # ============================================================
-      # ✅ RUN CYPRESS
+      # RUN CYPRESS
       # ============================================================
-      # Bersihkan folder lama di step terpisah agar tidak konflik
-      - name: Clean results folder
-        run: |
-          rm -rf results allure-results
-          mkdir -p results allure-results
-          # CI_BUILD_ID unik per run
-          echo "CI_BUILD_ID=${{ github.repository }}-${{ github.run_id }}-${{ github.run_attempt }}" >> $GITHUB_ENV
-
       - name: Run Cypress Tests
-        id: cypress
+        continue-on-error: true
         run: |
-          set +e
-
           npx cypress run \
             --record \
             --key ${{ secrets.CYPRESS_RECORD_KEY }} \
-            | tee cypress-output.txt
+            2>&1 | tee cypress-raw.txt
 
-          CYPRESS_EXIT_CODE=${PIPESTATUS[0]}
-          echo "CYPRESS_EXIT_CODE=$CYPRESS_EXIT_CODE" >> $GITHUB_ENV
-
-      # ============================================================
-      # ✅ MOCHAWESOME — merge JSON jadi 1 file untuk parsing summary
-      # ============================================================
-      # - name: Remove empty mochawesome files
-      #   if: always()
-      #   run: find results -type f -name "*.json" -size 0 -delete || true
-
-      # - name: Merge mochawesome reports
-      #   if: always()
-      #   run: |
-      #     echo "=== File di results/ ==="
-      #     ls -lah results/ || echo "folder kosong"
-
-      #     JSON_FILES=$(find results -name "mochawesome_*.json" -size +0c 2>/dev/null)
-      #     echo "=== JSON files ditemukan ==="
-      #     echo "$JSON_FILES"
-
-      #     if [ -n "$JSON_FILES" ]; then
-      #       npx mochawesome-merge results/mochawesome_*.json > results/mochawesome.json
-      #       echo "✅ Mochawesome merged"
-      #       cat results/mochawesome.json | jq '.stats'
-      #     else
-      #       echo "⚠️ No mochawesome files found"
-      #       echo '{"stats":{"tests":0,"passes":0,"failures":0,"pending":0,"duration":0},"results":[]}' \
-      #         > results/mochawesome.json
-      #     fi
+      - name: Strip ANSI color codes
+        if: always()
+        run: |
+          sed 's/\x1B\[[0-9;]*[mKHF]//g' cypress-raw.txt > cypress-output.txt
 
       # ============================================================
-      # ✅ ALLURE — generate report, simpan sebagai artifact 30 hari
-      # Download dari: Actions tab → pilih run → Artifacts section
+      # ALLURE
       # ============================================================
       - name: Generate Allure Report
         if: always()
         run: |
-          npm install -g allure-commandline
+          npm install -g allure-commandline --quiet
           if [ -d allure-results ] && [ "$(ls -A allure-results 2>/dev/null)" ]; then
             allure generate allure-results --clean -o allure-report
-            echo "✅ Allure report generated"
-          else
-            echo "⚠️ No allure results, skipping"
           fi
 
-      - name: Upload Allure Report as Artifact
+      - name: Upload Allure Artifact
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: allure-report-run-${{ github.run_number }}
+          name: allure-report-${{ github.run_number }}
           path: allure-report/
           retention-days: 30
 
-      - name: Remove ANSI color codes
-        if: always()
-        run: |
-          sed -r "s/\x1B\[[0-9;]*[mK]//g" cypress-output.txt > clean-output.txt
-
       # ============================================================
-      # ✅ EXTRACT SUMMARY — dari mochawesome (fresh, results dibersihkan sebelum run)
-      # Duration dari GitHub Actions timestamp
+      # EXTRACT STATS
       # ============================================================
       - name: Extract test summary
         if: always()
         run: |
-
+          # Duration
           JOB_END_TIME=$(date +%s)
           DURATION_SEC=$(( JOB_END_TIME - JOB_START_TIME ))
           MINUTES=$((DURATION_SEC / 60))
           SECONDS=$((DURATION_SEC % 60))
 
-          # OUTPUT_FILE="cypress-output.txt"
-          OUTPUT_FILE="clean-output.txt"
-
-          # ======================================
-          # AMBIL SUMMARY TERAKHIR (PALING BAWAH)
-          # ======================================
-          PASSING=$(grep -oE '[0-9]+ passing' $OUTPUT_FILE | tail -1 | awk '{print $1}')
-          FAILING=$(grep -oE '[0-9]+ failing' $OUTPUT_FILE | tail -1 | awk '{print $1}')
+          # Stats dari cypress terminal output
+          PASSING=$(grep -E '^\s+[0-9]+ passing' cypress-output.txt | tail -1 | grep -oE '[0-9]+' | head -1)
+          FAILING=$(grep -E '^\s+[0-9]+ failing' cypress-output.txt | tail -1 | grep -oE '[0-9]+' | head -1)
+          PENDING=$(grep -E '^\s+[0-9]+ pending' cypress-output.txt | tail -1 | grep -oE '[0-9]+' | head -1)
 
           PASSING=${PASSING:-0}
           FAILING=${FAILING:-0}
+          PENDING=${PENDING:-0}
+          TOTAL=$(( PASSING + FAILING + PENDING ))
 
-          TOTAL_TESTS=$((PASSING + FAILING))
-          PASSED_TESTS=$PASSING
-          FAILED_TESTS=$FAILING
-
-          # ======================================
-          # FAILED TEST LIST (CYPRESS v13 SAFE)
-          # ======================================
-          FAILED_TEST_DETAILS=$(grep "✖" $OUTPUT_FILE \
-            | grep ".cy." \
-            | sed 's/\x1b\[[0-9;]*m//g' \
-            | awk '{print $3}' \
-            | sed 's/^/• /')
-
-          # ======================================
-          # PASS RATE
-          # ======================================
-          if [ "$TOTAL_TESTS" -gt 0 ]; then
-            PASS_RATE=$(echo "scale=1; $PASSED_TESTS * 100 / $TOTAL_TESTS" | bc)
+          if [ "$TOTAL" -gt 0 ]; then
+            PASS_RATE=$(echo "scale=1; $PASSING * 100 / $TOTAL" | bc)
           else
             PASS_RATE="0"
           fi
 
-          echo "TOTAL_TESTS=$TOTAL_TESTS" >> $GITHUB_ENV
-          echo "PASSED_TESTS=$PASSED_TESTS" >> $GITHUB_ENV
-          echo "FAILED_TESTS=$FAILED_TESTS" >> $GITHUB_ENV
+          # Nama spec files yang dijalankan (untuk suite name)
+          SUITE_LIST=$(grep -oE 'Running:\s+\S+' cypress-output.txt \
+            | sed 's/Running:\s*//' \
+            | tr '\n' ', ' \
+            | sed 's/, $//')
+
+          echo "TOTAL_TESTS=$TOTAL"                    >> $GITHUB_ENV
+          echo "PASSED_TESTS=$PASSING"                 >> $GITHUB_ENV
+          echo "FAILED_TESTS=$FAILING"                 >> $GITHUB_ENV
+          echo "PENDING_TESTS=$PENDING"                >> $GITHUB_ENV
+          echo "TEST_DURATION=${MINUTES}m ${SECONDS}s" >> $GITHUB_ENV
+          echo "PASS_RATE=${PASS_RATE}%"               >> $GITHUB_ENV
+          echo "SUITE_LIST=$SUITE_LIST"                >> $GITHUB_ENV
+
+          echo "Total=$TOTAL | Passed=$PASSING | Failed=$FAILING | Duration=${MINUTES}m ${SECONDS}s"
+
+      - name: Extract failed test names
+        if: always()
+        run: |
+          # Parse failed test names dari section "failing" di output Cypress
+          # Format Cypress:
+          #   1) Suite Title
+          #        test title:
+          FAILED_LIST=$(awk '
+            /^[[:space:]]+[0-9]+\)/ {
+              capture=1
+              suite=""
+              next
+            }
+            capture==1 && /^[[:space:]]+[^[:space:]]/ {
+              line=$0
+              gsub(/^[[:space:]]+/, "", line)
+              gsub(/:$/, "", line)
+              print "• " line
+              capture=0
+            }
+            /^[[:space:]]*$/ { capture=0 }
+          ' cypress-output.txt | sort -u | head -20)
+
+          echo "=== FAILED LIST DEBUG ==="
+          echo "$FAILED_LIST"
 
           echo "FAILED_TEST_DETAILS<<EOF" >> $GITHUB_ENV
-          echo "$FAILED_TEST_DETAILS" >> $GITHUB_ENV
-          echo "EOF" >> $GITHUB_ENV
-
-          echo "TEST_DURATION=${MINUTES}m ${SECONDS}s" >> $GITHUB_ENV
-          echo "PASS_RATE=${PASS_RATE}%" >> $GITHUB_ENV
-
-          # 📊 Stats langsung dari merged mochawesome (data fresh run ini)
-          # if [ -f results/mochawesome.json ]; then
-          #   TOTAL_TESTS=$(jq '.stats.tests // 0' results/mochawesome.json 2>/dev/null || echo 0)
-          #   FAILED_TESTS=$(jq '.stats.failures // 0' results/mochawesome.json 2>/dev/null || echo 0)
-          #   PASSED_TESTS=$(jq '.stats.passes // 0' results/mochawesome.json 2>/dev/null || echo 0)
-          #   PENDING_TESTS=$(jq '.stats.pending // 0' results/mochawesome.json 2>/dev/null || echo 0)
-          # else
-          #   TOTAL_TESTS=0; FAILED_TESTS=0; PASSED_TESTS=0; PENDING_TESTS=0
-          # fi
-
-          # Bersihkan quote dari output jq
-          # TOTAL_TESTS=$(echo "$TOTAL_TESTS" | tr -d '"')
-          # FAILED_TESTS=$(echo "$FAILED_TESTS" | tr -d '"')
-          # PASSED_TESTS=$(echo "$PASSED_TESTS" | tr -d '"')
-          # PENDING_TESTS=$(echo "$PENDING_TESTS" | tr -d '"')
-
-          # Pass rate
-          # if [ "${TOTAL_TESTS:-0}" -gt 0 ] 2>/dev/null; then
-          #   PASS_RATE=$(echo "scale=1; $PASSED_TESTS * 100 / $TOTAL_TESTS" | bc)
-          # else
-          #   PASS_RATE="0"
-          # fi
-
-          # echo "TOTAL_TESTS=$TOTAL_TESTS" >> $GITHUB_ENV
-          # echo "PASSED_TESTS=$PASSED_TESTS" >> $GITHUB_ENV
-          # echo "FAILED_TESTS=$FAILED_TESTS" >> $GITHUB_ENV
-          # echo "PENDING_TESTS=$PENDING_TESTS" >> $GITHUB_ENV
-
-          # echo "FAILED_TEST_DETAILS<<EOF" >> $GITHUB_ENV
-          # echo "$FAILED_TEST_DETAILS" >> $GITHUB_ENV
-          # echo "EOF" >> $GITHUB_ENV
-
-          # echo "TEST_DURATION=${MINUTES}m ${SECONDS}s" >> $GITHUB_ENV
-          # echo "PASS_RATE=${PASS_RATE}%" >> $GITHUB_ENV
-
-      # - name: Extract failed tests
-      #   if: always()
-      #   run: |
-      #     FAILED_TEST_DETAILS=""
-
-      #     # ✅ Ambil failed test dari mochawesome (fresh, sinkron dengan run ini)
-      #     if [ -f results/mochawesome.json ]; then
-      #       FAILED_TEST_DETAILS=$(jq -r \
-      #         '[ .. | objects | select(.fail == true and .fullTitle?) | .fullTitle ] | unique[] | "• " + .' \
-      #         results/mochawesome.json 2>/dev/null || echo "")
-      #     fi
-
-      #     echo "FAILED_TEST_DETAILS<<EOF" >> $GITHUB_ENV
-      #     echo "$FAILED_TEST_DETAILS"     >> $GITHUB_ENV
-      #     echo "EOF"                      >> $GITHUB_ENV
-
-      # - name: Prepare failed display
-      #   if: always()
-      #   run: |
-      #     if [ "$FAILED_TESTS" != "0" ]; then
-      #       FAILED_DISPLAY="❌ Ada test yang gagal — lihat Cypress Cloud"
-      #     else
-      #       FAILED_DISPLAY="✅ Semua test passed!"
-      #     fi
-
-      #     echo "FAILED_DISPLAY=$FAILED_DISPLAY" >> $GITHUB_ENV
+          echo "$FAILED_LIST"             >> $GITHUB_ENV
+          echo "EOF"                      >> $GITHUB_ENV
 
       # ============================================================
-      # ✅ DISCORD NOTIFICATION
-      # Link langsung ke Cypress Cloud + Allure artifact
+      # DISCORD NOTIFICATION — format mirip Katalon
       # ============================================================
       - name: Send Discord Notification
         if: always()
         run: |
+          EXEC_TIME=$(TZ='Asia/Jakarta' date "+%Y-%m-%d %I:%M:%S %p")
+          DURATION_LABEL="${TEST_DURATION}"
 
-          # ================================
-          # EXECUTION TIME
-          # ================================
-          EXEC_TIME=$(date "+Today at %I:%M %p")
+          TOTAL=${TOTAL_TESTS:-0}
+          PASSED=${PASSED_TESTS:-0}
+          FAILED=${FAILED_TESTS:-0}
 
-          # ================================
-          # STATUS
-          # ================================
-          if [ "$FAILED_TESTS" != "0" ]; then
-            STATUS="failed"
-            ICON="❌"
+          if [ "$FAILED" != "0" ]; then
+            STATUS_TEXT="has failed"
+            RESULT_ICON="❌"
             COLOR=15158332
-            RESULT_LINE="❌ $FAILED_TESTS test failed"
+            RESULT_LABEL="$FAILED test results failed"
           else
-            STATUS="passed"
-            ICON="✅"
+            STATUS_TEXT="has passed"
+            RESULT_ICON="✅"
             COLOR=3066993
-            RESULT_LINE="✔ $TOTAL_TESTS test results"
+            RESULT_LABEL="$TOTAL test results passed"
+          fi
+
+          # Trigger label
+          case "$TRIGGER" in
+            schedule)          TRIGGER_LABEL="Scheduled"    ;;
+            push)              TRIGGER_LABEL="Push to main" ;;
+            pull_request)      TRIGGER_LABEL="Pull Request" ;;
+            workflow_dispatch) TRIGGER_LABEL="Manual"       ;;
+            *)                 TRIGGER_LABEL="$TRIGGER"     ;;
+          esac
+
+          # Branch / PR info
+          if [ "$TRIGGER" = "pull_request" ]; then
+            BRANCH_INFO="PR #${{ github.event.pull_request.number }} (${{ github.head_ref }})"
+          else
+            BRANCH_INFO="${{ github.ref_name }}"
           fi
 
           RUN_URL="https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}"
           CLOUD_URL="https://cloud.cypress.io/projects/wipkva/runs"
+          ARTIFACT_URL="${RUN_URL}#artifacts"
 
-          # ================================
-          # FAILED TEST LIST
-          # ================================
-          if [ "$FAILED_TESTS" != "0" ]; then
-            FAILED_SECTION="Failed Tests:\n$FAILED_TEST_DETAILS\n\n🔍 View Detail → $CLOUD_URL"
+          # Suite name — pakai spec list atau fallback ke branch
+          if [ -n "$SUITE_LIST" ]; then
+            SUITE_NAME="$SUITE_LIST"
           else
-            FAILED_SECTION=""
+            SUITE_NAME="${{ github.ref_name }}"
           fi
 
-          # ================================
-          # MESSAGE BODY
-          # ================================
-          DESCRIPTION="Test Run #${{ github.run_number }} has $STATUS.
+          # Failed test list sebagai string
+          if [ "$FAILED" != "0" ] && [ -n "$FAILED_TEST_DETAILS" ]; then
+            FAILED_BLOCK="$FAILED test results failed\n$FAILED_TEST_DETAILS"
+          elif [ "$FAILED" != "0" ]; then
+            FAILED_BLOCK="$FAILED test results failed\n• (lihat Cypress Cloud untuk detail)"
+          else
+            FAILED_BLOCK=""
+          fi
 
-          📦 Suite : $TEST_SUITE
-          🗓 Executed : $EXEC_TIME
-          ⏱ Duration : $TEST_DURATION
-            $RESULT_LINE
+          # Build description mirip Katalon
+          REPO="${{ github.repository }}"
+          DESC="Test Run [#${{ github.run_number }}]($RUN_URL) of the **${REPO##*/}** ${STATUS_TEXT}."
 
-            $FAILED_SECTION
+          BODY="$(printf '%s\n\n📦 %s\n🕐 %s (%s)\n%s %s test results' \
+            "$DESC" \
+            "$SUITE_NAME" \
+            "$EXEC_TIME" \
+            "$DURATION_LABEL" \
+            "$RESULT_ICON" \
+            "$TOTAL")"
 
-          Project : ${{ github.repository }}"
+          if [ -n "$FAILED_BLOCK" ]; then
+            BODY="$(printf '%s\n\n%b' "$BODY" "$FAILED_BLOCK")"
+          fi
 
-            GitHub Actions • Cypress Cloud • Run #${{ github.run_number }} • $EXEC_TIME
+          FOOTER="${REPO} | ${BRANCH_INFO} | ${TRIGGER_LABEL}"
 
           jq -n \
-            --arg title "$ICON Automation Report Cypress" \
-            --arg desc "$DESCRIPTION" \
+            --arg body   "$BODY" \
+            --arg footer "$FOOTER" \
+            --arg cloudUrl "$CLOUD_URL" \
+            --arg artifactUrl "$ARTIFACT_URL" \
             --argjson color $COLOR \
-            '{
-              embeds: [{
-                title: $title,
-                description: $desc,
-                color: $color,
-                timestamp: (now | todateiso8601)
-              }]
-            }' \
+          '{
+            embeds: [{
+              description: $body,
+              color: $color,
+              fields: [
+                { name: "☁️ Cypress Cloud", value: ("[Open Dashboard →](" + $cloudUrl + ")"),      inline: true },
+                { name: "📦 Allure Report", value: ("[Download Artifact →](" + $artifactUrl + ")"), inline: true }
+              ],
+              footer: { text: $footer },
+              timestamp: (now | todateiso8601)
+            }]
+          }' \
           | curl -s -H "Content-Type: application/json" \
               -X POST \
               -d @- \
