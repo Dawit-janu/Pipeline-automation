@@ -16,7 +16,7 @@ on:
   schedule:
    #- cron: '0 1 * * *'   # 08:00 WIB (UTC+7)
    #- cron: '40 20 * * *'
-     - cron: '0 18 * * 0-4'
+     #- cron: '0 18 * * 0-4'
      - cron: '*/5 * * * *'
 
 
@@ -79,12 +79,19 @@ jobs:
       - name: Merge mochawesome reports
         if: always()
         run: |
-          if ls results/mochawesome_*.json 1> /dev/null 2>&1; then
+          echo "=== File di results/ ==="
+          ls -lah results/ || echo "folder kosong"
+
+          JSON_FILES=$(find results -name "mochawesome_*.json" -size +0c 2>/dev/null)
+          echo "=== JSON files ditemukan ==="
+          echo "$JSON_FILES"
+
+          if [ -n "$JSON_FILES" ]; then
             npx mochawesome-merge results/mochawesome_*.json > results/mochawesome.json
             echo "✅ Mochawesome merged"
             cat results/mochawesome.json | jq '.stats'
           else
-            echo "⚠️ No mochawesome files, creating fallback"
+            echo "⚠️ No mochawesome files found"
             echo '{"stats":{"tests":0,"passes":0,"failures":0,"pending":0,"duration":0},"results":[]}' \
               > results/mochawesome.json
           fi
