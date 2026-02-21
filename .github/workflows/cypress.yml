@@ -135,11 +135,11 @@ jobs:
 
           OUTPUT_FILE="cypress-output.txt"
 
-          # ===============================
-          # SAFE PARSING CYPRESS OUTPUT
-          # ===============================
-          PASSING=$(grep -oE '[0-9]+ passing' $OUTPUT_FILE | awk '{print $1}' | tail -1)
-          FAILING=$(grep -oE '[0-9]+ failing' $OUTPUT_FILE | awk '{print $1}' | tail -1)
+          # ======================================
+          # AMBIL SUMMARY TERAKHIR (PALING BAWAH)
+          # ======================================
+          PASSING=$(grep -oE '[0-9]+ passing' $OUTPUT_FILE | tail -1 | awk '{print $1}')
+          FAILING=$(grep -oE '[0-9]+ failing' $OUTPUT_FILE | tail -1 | awk '{print $1}')
 
           PASSING=${PASSING:-0}
           FAILING=${FAILING:-0}
@@ -148,14 +148,15 @@ jobs:
           PASSED_TESTS=$PASSING
           FAILED_TESTS=$FAILING
 
-          # ===============================
-          # FAILED TEST LIST
-          # ===============================
-          FAILED_TEST_DETAILS=$(awk '/Failing Tests:/,/^$/' $OUTPUT_FILE | tail -n +2 | sed 's/^/• /')
+          # ======================================
+          # FAILED TEST LIST (CYPRESS v13 SAFE)
+          # ======================================
+          FAILED_TEST_DETAILS=$(grep -A5 "✖" $OUTPUT_FILE | \
+            grep ".cy.js" | sed 's/^/• /' || true)
 
-          # ===============================
+          # ======================================
           # PASS RATE
-          # ===============================
+          # ======================================
           if [ "$TOTAL_TESTS" -gt 0 ]; then
             PASS_RATE=$(echo "scale=1; $PASSED_TESTS * 100 / $TOTAL_TESTS" | bc)
           else
