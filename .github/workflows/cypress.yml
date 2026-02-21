@@ -288,7 +288,7 @@ jobs:
           # ================================
           # MESSAGE BODY
           # ================================
-          DESCRIPTION="Test Run #${{ github.run_number }} has $STATUS.
+          DESCRIPTION=Test Run #${{ github.run_number }} has $STATUS.
 
           📦 Suite : $TEST_SUITE
           🗓 Executed : $EXEC_TIME
