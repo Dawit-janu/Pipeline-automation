@@ -290,13 +290,16 @@ jobs:
           # ================================
           DESCRIPTION="Test Run #${{ github.run_number }} has $STATUS.
 
-          📦 Suite : Cypress Automation
+          📦 Suite : $TEST_SUITE
+          🗓 Executed : $EXEC_TIME
           ⏱ Duration : $TEST_DURATION
-          $RESULT_LINE
+            $RESULT_LINE
 
-          $FAILED_SECTION
+            $FAILED_SECTION
 
           Project : ${{ github.repository }}"
+
+            GitHub Actions • Cypress Cloud • Run #${{ github.run_number }} • $EXEC_TIME
 
           jq -n \
             --arg title "$ICON Automation Report Cypress" \
