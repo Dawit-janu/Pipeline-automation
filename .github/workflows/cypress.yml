@@ -48,24 +48,21 @@ jobs:
 
       # ============================================================
       # ✅ RUN CYPRESS
-      # --record  → kirim ke Cypress Cloud dashboard (video, screenshot, history)
-      # --reporter → generate mochawesome JSON untuk summary Discord
       # ============================================================
+      # Bersihkan folder lama di step terpisah agar tidak konflik
+      - name: Clean results folder
+        run: |
+          rm -rf results allure-results
+          mkdir -p results allure-results
+          # CI_BUILD_ID unik per run
+          echo "CI_BUILD_ID=${{ github.repository }}-${{ github.run_id }}-${{ github.run_attempt }}" >> $GITHUB_ENV
+
       - name: Run Cypress Tests
         continue-on-error: true
         run: |
-          # Bersihkan results lama agar tidak ada data stale
-          rm -rf results allure-results
-          mkdir -p results allure-results
-
-          # CI_BUILD_ID unik per run
-          CI_BUILD_ID="${{ github.repository }}-${{ github.run_id }}-${{ github.run_attempt }}"
-          echo "CI_BUILD_ID=$CI_BUILD_ID" >> $GITHUB_ENV
-
           npx cypress run \
             --record \
             --key ${{ secrets.CYPRESS_RECORD_KEY }} \
-            --ci-build-id "$CI_BUILD_ID" \
             --reporter mochawesome \
             --reporter-options "reportDir=results,overwrite=false,html=false,json=true"
         env:
