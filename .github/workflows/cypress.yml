@@ -138,9 +138,15 @@ jobs:
       - name: Extract test summary
         if: always()
         run: |
-          TOTAL_TESTS=$(jq '.total' cypress-summary.json)
-          PASSED_TESTS=$(jq '.passed' cypress-summary.json)
-          FAILED_TESTS=$(jq '.failed' cypress-summary.json)
+
+          if [ ! -f cypress-summary.json ]; then
+            echo "⚠️ summary file not found"
+            echo '{"total":0,"passed":0,"failed":0,"failures":[]}' > cypress-summary.json
+          fi
+
+          TOTAL_TESTS=$(jq -r '.total // 0' cypress-summary.json)
+          PASSED_TESTS=$(jq -r '.passed // 0' cypress-summary.json)
+          FAILED_TESTS=$(jq -r '.failed // 0' cypress-summary.json)
 
           FAILED_LIST=$(jq -r '.failures[]?' cypress-summary.json | sed 's/^/• /')
 
