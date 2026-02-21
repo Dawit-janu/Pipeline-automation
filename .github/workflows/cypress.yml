@@ -58,16 +58,18 @@ jobs:
           echo "CI_BUILD_ID=${{ github.repository }}-${{ github.run_id }}-${{ github.run_attempt }}" >> $GITHUB_ENV
 
       - name: Run Cypress Tests
+        id: cypress
         run: |
           set +e
 
           npx cypress run \
-            --record \
-            --key ${{ secrets.CYPRESS_RECORD_KEY }} \
-            --reporter json \
-            --reporter-options output=cypress-report.json
+          --record \
+          --key ${{ secrets.CYPRESS_RECORD_KEY }} \
+          --reporter json \
+          --reporter-options output=cypress-report.json \
+          | tee cypress-output.txt
 
-          CYPRESS_EXIT_CODE=$?
+          CYPRESS_EXIT_CODE=${PIPESTATUS[0]}
           echo "CYPRESS_EXIT_CODE=$CYPRESS_EXIT_CODE" >> $GITHUB_ENV
 
       # ============================================================
@@ -144,15 +146,15 @@ jobs:
           # ======================================
           # AMBIL SUMMARY TERAKHIR (PALING BAWAH)
           # ======================================
-          if [ -f cypress-report.json ]; then
-            TOTAL_TESTS=$(jq '.stats.tests' cypress-report.json)
-            PASSED_TESTS=$(jq '.stats.passes' cypress-report.json)
-            FAILED_TESTS=$(jq '.stats.failures' cypress-report.json)
-          else
-            TOTAL_TESTS=0
-            PASSED_TESTS=0
-            FAILED_TESTS=0
-          fi
+          PASSING=$(grep -oE '[0-9]+ passing' $OUTPUT_FILE | tail -1 | awk '{print $1}')
+          FAILING=$(grep -oE '[0-9]+ failing' $OUTPUT_FILE | tail -1 | awk '{print $1}')
+
+          PASSING=${PASSING:-0}
+          FAILING=${FAILING:-0}
+
+          TOTAL_TESTS=$((PASSING + FAILING))
+          PASSED_TESTS=$PASSING
+          FAILED_TESTS=$FAILING
 
           # ======================================
           # FAILED TEST LIST (CYPRESS v13 SAFE)
