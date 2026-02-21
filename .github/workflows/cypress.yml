@@ -25,6 +25,9 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+       # =====================================================
+      # CHECKOUT
+      # =====================================================
       - name: Checkout repo
         uses: actions/checkout@v4
 
@@ -33,29 +36,35 @@ jobs:
         run: |
           echo "TRIGGER=${{ github.event_name }}" >> $GITHUB_ENV
           echo "JOB_START_TIME=$(date +%s)" >> $GITHUB_ENV
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      # =====================================================
+      # SETUP
+      # =====================================================
 
       # ✅ Dependencies
-      - name: Install jq
-        run: sudo apt-get update && sudo apt-get install -y jq
+      # - name: Install jq
+      #   run: sudo apt-get update && sudo apt-get install -y jq
 
-      - name: Setup Node.js
+      - name: Setup Node
         uses: actions/setup-node@v4
         with:
           node-version: 18
 
-      - name: Install project dependencies
+      - name: Install dependencies
         run: npm ci
 
       # ============================================================
       # ✅ RUN CYPRESS
       # ============================================================
       # Bersihkan folder lama di step terpisah agar tidak konflik
-      - name: Clean results folder
-        run: |
-          rm -rf results allure-results
-          mkdir -p results allure-results
-          # CI_BUILD_ID unik per run
-          echo "CI_BUILD_ID=${{ github.repository }}-${{ github.run_id }}-${{ github.run_attempt }}" >> $GITHUB_ENV
+      # - name: Clean results folder
+      #   run: |
+      #     rm -rf results allure-results
+      #     mkdir -p results allure-results
+      #     # CI_BUILD_ID unik per run
+      #     echo "CI_BUILD_ID=${{ github.repository }}-${{ github.run_id }}-${{ github.run_attempt }}" >> $GITHUB_ENV
 
       - name: Run Cypress Tests
         id: cypress
@@ -64,16 +73,12 @@ jobs:
 
           npx cypress run \
             --record \
-            --key ${{ secrets.CYPRESS_RECORD_KEY }} \
-            --reporter mocha \
-            --reporter-options reporter=json,output=cypress-report.json
+            --key ${{ secrets.CYPRESS_RECORD_KEY }}
 
-          CYPRESS_EXIT_CODE=$?
-          echo "CYPRESS_EXIT_CODE=$CYPRESS_EXIT_CODE" >> $GITHUB_ENV
-          # echo "Cypress exit code: $CYPRESS_EXIT_CODE"
-        env:
-          allure: true
-          allureResultsPath: allure-results
+          EXIT_CODE=$?
+
+          echo "CYPRESS_EXIT_CODE=$EXIT_CODE" >> $GITHUB_ENV
+          echo "Exit code: $EXIT_CODE"
 
       # ============================================================
       # ✅ MOCHAWESOME — merge JSON jadi 1 file untuk parsing summary
@@ -112,16 +117,17 @@ jobs:
           npm install -g allure-commandline
           if [ -d allure-results ] && [ "$(ls -A allure-results 2>/dev/null)" ]; then
             allure generate allure-results --clean -o allure-report
-            echo "✅ Allure report generated"
+            echo "Allure generated"
           else
-            echo "⚠️ No allure results, skipping"
+            mkdir allure-report
+            echo "No results" > allure-report/index.html
           fi
 
-      - name: Upload Allure Report as Artifact
+      - name: Upload Allure Artifact
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: allure-report-run-${{ github.run_number }}
+          name: allure-report-${{ github.run_number }}
           path: allure-report/
           retention-days: 30
 
@@ -129,33 +135,35 @@ jobs:
       # ✅ EXTRACT SUMMARY — dari mochawesome (fresh, results dibersihkan sebelum run)
       # Duration dari GitHub Actions timestamp
       # ============================================================
-      - name: Extract test summary
+      - name: Prepare Summary
         if: always()
         run: |
-          # ⏱ Duration dari GitHub Actions timestamp
           JOB_END_TIME=$(date +%s)
-          DURATION_SEC=$(( JOB_END_TIME - JOB_START_TIME ))
-          if [ "$DURATION_SEC" -gt 10800 ]; then DURATION_SEC=0; fi
-          MINUTES=$((DURATION_SEC / 60))
-          SECONDS=$((DURATION_SEC % 60))
+          DURATION=$(( JOB_END_TIME - JOB_START_TIME ))
+          MIN=$((DURATION / 60))
+          SEC=$((DURATION % 60))
 
-           if [ -f cypress-report.json ]; then
-            TOTAL_TESTS=$(jq '.stats.tests' cypress-report.json)
-            PASSED_TESTS=$(jq '.stats.passes' cypress-report.json)
-            FAILED_TESTS=$(jq '.stats.failures' cypress-report.json)
-            PENDING_TESTS=$(jq '.stats.pending' cypress-report.json)
+          echo "TEST_DURATION=${MIN}m ${SEC}s" >> $GITHUB_ENV
+
+          if [ "$CYPRESS_EXIT_CODE" != "0" ]; then
+            STATUS="FAILED"
+            ICON="❌"
+            COLOR=15158332
+            RESULT_TEXT="❌ Ada test gagal — lihat Cypress Cloud"
+            PASS_RATE="0%"
           else
-            TOTAL_TESTS=0
-            PASSED_TESTS=0
-            FAILED_TESTS=0
-            PENDING_TESTS=0
+            STATUS="SUCCESS"
+            ICON="✅"
+            COLOR=3066993
+            RESULT_TEXT="✅ Semua test passed!"
+            PASS_RATE="100%"
           fi
 
-          if [ "$TOTAL_TESTS" -gt 0 ]; then
-            PASS_RATE=$(echo "scale=1; $PASSED_TESTS * 100 / $TOTAL_TESTS" | bc)
-          else
-            PASS_RATE="0"
-          fi
+          echo "STATUS=$STATUS" >> $GITHUB_ENV
+          echo "ICON=$ICON" >> $GITHUB_ENV
+          echo "COLOR=$COLOR" >> $GITHUB_ENV
+          echo "RESULT_TEXT=$RESULT_TEXT" >> $GITHUB_ENV
+          echo "PASS_RATE=$PASS_RATE" >> $GITHUB_ENV
 
           # 📊 Stats langsung dari merged mochawesome (data fresh run ini)
           # if [ -f results/mochawesome.json ]; then
@@ -180,12 +188,12 @@ jobs:
           #   PASS_RATE="0"
           # fi
 
-          echo "TOTAL_TESTS=$TOTAL_TESTS" >> $GITHUB_ENV
-          echo "PASSED_TESTS=$PASSED_TESTS" >> $GITHUB_ENV
-          echo "FAILED_TESTS=$FAILED_TESTS" >> $GITHUB_ENV
-          echo "PENDING_TESTS=$PENDING_TESTS" >> $GITHUB_ENV
-          echo "TEST_DURATION=${MINUTES}m ${SECONDS}s" >> $GITHUB_ENV
-          echo "PASS_RATE=${PASS_RATE}%" >> $GITHUB_ENV
+          # echo "TOTAL_TESTS=$TOTAL_TESTS" >> $GITHUB_ENV
+          # echo "PASSED_TESTS=$PASSED_TESTS" >> $GITHUB_ENV
+          # echo "FAILED_TESTS=$FAILED_TESTS" >> $GITHUB_ENV
+          # echo "PENDING_TESTS=$PENDING_TESTS" >> $GITHUB_ENV
+          # echo "TEST_DURATION=${MINUTES}m ${SECONDS}s" >> $GITHUB_ENV
+          # echo "PASS_RATE=${PASS_RATE}%" >> $GITHUB_ENV
 
       # - name: Extract failed tests
       #   if: always()
@@ -203,16 +211,16 @@ jobs:
       #     echo "$FAILED_TEST_DETAILS"     >> $GITHUB_ENV
       #     echo "EOF"                      >> $GITHUB_ENV
 
-      - name: Prepare failed display
-        if: always()
-        run: |
-          if [ "$FAILED_TESTS" != "0" ]; then
-            FAILED_DISPLAY="❌ Ada test yang gagal — lihat Cypress Cloud"
-          else
-            FAILED_DISPLAY="✅ Semua test passed!"
-          fi
+      # - name: Prepare failed display
+      #   if: always()
+      #   run: |
+      #     if [ "$FAILED_TESTS" != "0" ]; then
+      #       FAILED_DISPLAY="❌ Ada test yang gagal — lihat Cypress Cloud"
+      #     else
+      #       FAILED_DISPLAY="✅ Semua test passed!"
+      #     fi
 
-          echo "FAILED_DISPLAY=$FAILED_DISPLAY" >> $GITHUB_ENV
+      #     echo "FAILED_DISPLAY=$FAILED_DISPLAY" >> $GITHUB_ENV
 
       # ============================================================
       # ✅ DISCORD NOTIFICATION
@@ -221,88 +229,46 @@ jobs:
       - name: Send Discord Notification
         if: always()
         run: |
-          if [ "$CYPRESS_EXIT_CODE" != "0" ]; then
-            STATUS="FAILED"
-            COLOR=15158332
-            ICON="❌"
-          else
-            STATUS="SUCCESS"
-            COLOR=3066993
-            ICON="✅"
-          fi
 
           case "$TRIGGER" in
-            schedule)          TRIGGER_LABEL="⏰ Scheduled" ;;
-            push)              TRIGGER_LABEL="🚀 Push to main" ;;
-            pull_request)      TRIGGER_LABEL="🔀 Pull Request (Fix)" ;;
+            schedule) TRIGGER_LABEL="⏰ Scheduled" ;;
+            push) TRIGGER_LABEL="🚀 Push to main" ;;
+            pull_request) TRIGGER_LABEL="🔀 Pull Request" ;;
             workflow_dispatch) TRIGGER_LABEL="🖐 Manual" ;;
-            *)                 TRIGGER_LABEL="$TRIGGER" ;;
+            *) TRIGGER_LABEL="$TRIGGER" ;;
           esac
 
           RUN_URL="https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}"
           CLOUD_URL="https://cloud.cypress.io/projects/wipkva/runs"
           ARTIFACT_URL="${RUN_URL}#artifacts"
-          PR_URL="https://github.com/${{ github.repository }}/pull/${{ github.event.pull_request.number }}"
-
-          # Info konteks PR jika trigger dari pull_request
-          if [ "$TRIGGER" = "pull_request" ]; then
-            CONTEXT_INFO="PR #${{ github.event.pull_request.number }} — ${{ github.event.pull_request.title }}"
-            CONTEXT_URL="$PR_URL"
-          else
-            CONTEXT_INFO="${{ github.ref_name }}"
-            CONTEXT_URL="$RUN_URL"
-          fi
-
-          # Format failed tests + link ke Cypress Cloud
-          if [ -n "$FAILED_TEST_DETAILS" ] && [ "$FAILED_TEST_DETAILS" != "" ]; then
-            FAILED_DISPLAY="${FAILED_TEST_DETAILS}
-
-          [🔍 Lihat Detail di Cypress Cloud →](${CLOUD_URL})"
-          else
-            FAILED_DISPLAY="✅ Semua test passed!"
-          fi
 
           jq -n \
-            --arg trigger       "$TRIGGER_LABEL" \
-            --arg runNumber     "${{ github.run_number }}" \
-            --arg runAttempt    "${{ github.run_attempt }}" \
-            --arg branch        "${{ github.ref_name }}" \
-            --arg contextInfo   "$CONTEXT_INFO" \
-            --arg contextUrl    "$CONTEXT_URL" \
-            --arg status        "$STATUS" \
-            --arg total         "$TOTAL_TESTS" \
-            --arg passed        "$PASSED_TESTS" \
-            --arg failed        "$FAILED_TESTS" \
-            --arg pending       "$PENDING_TESTS" \
-            --arg passRate      "$PASS_RATE" \
-            --arg duration      "$TEST_DURATION" \
-            --arg cloudUrl      "$CLOUD_URL" \
-            --arg artifactUrl   "$ARTIFACT_URL" \
-            --arg icon          "$ICON" \
-            --arg failedDisplay "$FAILED_DISPLAY" \
-            --argjson color     $COLOR \
+            --arg icon "$ICON" \
+            --arg status "$STATUS" \
+            --arg trigger "$TRIGGER_LABEL" \
+            --arg duration "$TEST_DURATION" \
+            --arg passRate "$PASS_RATE" \
+            --arg result "$RESULT_TEXT" \
+            --arg cloud "$CLOUD_URL" \
+            --arg artifact "$ARTIFACT_URL" \
+            --argjson color $COLOR \
           '{
             embeds: [{
               title: ($icon + " Cypress Report — " + $status),
-              url: $cloudUrl,
+              url: $cloud,
               color: $color,
               fields: [
-                { name: "🔀 Trigger",    value: $trigger,                                          inline: true },
-                { name: "🏃 Run",        value: ("#" + $runNumber + " · Attempt " + $runAttempt), inline: true },
-                { name: "⏱ Duration",    value: $duration,                                         inline: true },
-                { name: "🌿 Branch/PR",  value: ("[" + $contextInfo + "](" + $contextUrl + ")"),   inline: true },
-                { name: "📊 Pass Rate",  value: $passRate,                                         inline: true },
-                { name: "📦 Allure",     value: ("[Download →](" + $artifactUrl + ")"),            inline: true },
-                { name: "📋 Total",      value: $total,                                            inline: true },
-                { name: "✅ Passed",     value: $passed,                                           inline: true },
-                { name: "❌ Failed",     value: $failed,                                           inline: true },
-                { name: "❗ Failed Tests", value: $failedDisplay }
+                { name: "🔀 Trigger", value: $trigger, inline: true },
+                { name: "⏱ Duration", value: $duration, inline: true },
+                { name: "📊 Pass Rate", value: $passRate, inline: true },
+                { name: "📦 Allure", value: ("[Download →](" + $artifact + ")"), inline: true },
+                { name: "Result", value: $result }
               ],
-              footer: { text: ("GitHub Actions • Cypress Cloud • Run #" + $runNumber) },
+              footer: { text: "GitHub Actions • Cypress Cloud" },
               timestamp: (now | todateiso8601)
             }]
           }' \
-          | curl -s -H "Content-Type: application/json" \
-              -X POST \
-              -d @- \
-              ${{ secrets.DISCORD_WEBHOOK }}
+          | curl -H "Content-Type: application/json" \
+                 -X POST \
+                 -d @- \
+                 ${{ secrets.DISCORD_WEBHOOK }}
