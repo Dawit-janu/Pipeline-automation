@@ -135,19 +135,27 @@ jobs:
 
           OUTPUT_FILE="cypress-output.txt"
 
-          TOTAL_TESTS=$(grep -oP '\d+(?= passing)' $OUTPUT_FILE | head -1)
-          FAILED_TESTS=$(grep -oP '\d+(?= failing)' $OUTPUT_FILE | head -1)
+          # ===============================
+          # SAFE PARSING CYPRESS OUTPUT
+          # ===============================
+          PASSING=$(grep -oE '[0-9]+ passing' $OUTPUT_FILE | awk '{print $1}' | tail -1)
+          FAILING=$(grep -oE '[0-9]+ failing' $OUTPUT_FILE | awk '{print $1}' | tail -1)
 
-          TOTAL_TESTS=${TOTAL_TESTS:-0}
-          FAILED_TESTS=${FAILED_TESTS:-0}
+          PASSING=${PASSING:-0}
+          FAILING=${FAILING:-0}
 
-          PASSED_TESTS=$((TOTAL_TESTS - FAILED_TESTS))
+          TOTAL_TESTS=$((PASSING + FAILING))
+          PASSED_TESTS=$PASSING
+          FAILED_TESTS=$FAILING
 
-          # =====================
+          # ===============================
           # FAILED TEST LIST
-          # =====================
+          # ===============================
           FAILED_TEST_DETAILS=$(awk '/Failing Tests:/,/^$/' $OUTPUT_FILE | tail -n +2 | sed 's/^/• /')
 
+          # ===============================
+          # PASS RATE
+          # ===============================
           if [ "$TOTAL_TESTS" -gt 0 ]; then
             PASS_RATE=$(echo "scale=1; $PASSED_TESTS * 100 / $TOTAL_TESTS" | bc)
           else
@@ -216,16 +224,16 @@ jobs:
       #     echo "$FAILED_TEST_DETAILS"     >> $GITHUB_ENV
       #     echo "EOF"                      >> $GITHUB_ENV
 
-      - name: Prepare failed display
-        if: always()
-        run: |
-          if [ "$FAILED_TESTS" != "0" ]; then
-            FAILED_DISPLAY="❌ Ada test yang gagal — lihat Cypress Cloud"
-          else
-            FAILED_DISPLAY="✅ Semua test passed!"
-          fi
+      # - name: Prepare failed display
+      #   if: always()
+      #   run: |
+      #     if [ "$FAILED_TESTS" != "0" ]; then
+      #       FAILED_DISPLAY="❌ Ada test yang gagal — lihat Cypress Cloud"
+      #     else
+      #       FAILED_DISPLAY="✅ Semua test passed!"
+      #     fi
 
-          echo "FAILED_DISPLAY=$FAILED_DISPLAY" >> $GITHUB_ENV
+      #     echo "FAILED_DISPLAY=$FAILED_DISPLAY" >> $GITHUB_ENV
 
       # ============================================================
       # ✅ DISCORD NOTIFICATION
