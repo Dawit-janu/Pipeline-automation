@@ -249,90 +249,62 @@ jobs:
       # ✅ DISCORD NOTIFICATION
       # Link langsung ke Cypress Cloud + Allure artifact
       # ============================================================
-      - name: Send Discord Notification
+      - name: Send Discord Notification (Katalon Style)
         if: always()
         run: |
-          if [ "$CYPRESS_EXIT_CODE" != "0" ]; then
-            STATUS="FAILED"
-            COLOR=15158332
-            ICON="❌"
-          else
-            STATUS="SUCCESS"
-            COLOR=3066993
-            ICON="✅"
-          fi
 
-          case "$TRIGGER" in
-            schedule)          TRIGGER_LABEL="⏰ Scheduled" ;;
-            push)              TRIGGER_LABEL="🚀 Push to main" ;;
-            pull_request)      TRIGGER_LABEL="🔀 Pull Request (Fix)" ;;
-            workflow_dispatch) TRIGGER_LABEL="🖐 Manual" ;;
-            *)                 TRIGGER_LABEL="$TRIGGER" ;;
-          esac
+          # ================================
+          # STATUS
+          # ================================
+          if [ "$FAILED_TESTS" != "0" ]; then
+            STATUS="failed"
+            ICON="❌"
+            COLOR=15158332
+            RESULT_LINE="❌ $FAILED_TESTS test failed"
+          else
+            STATUS="passed"
+            ICON="✅"
+            COLOR=3066993
+            RESULT_LINE="✔ $TOTAL_TESTS test results"
+          fi
 
           RUN_URL="https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}"
           CLOUD_URL="https://cloud.cypress.io/projects/wipkva/runs"
-          ARTIFACT_URL="${RUN_URL}#artifacts"
-          PR_URL="https://github.com/${{ github.repository }}/pull/${{ github.event.pull_request.number }}"
 
-          # Info konteks PR jika trigger dari pull_request
-          if [ "$TRIGGER" = "pull_request" ]; then
-            CONTEXT_INFO="PR #${{ github.event.pull_request.number }} — ${{ github.event.pull_request.title }}"
-            CONTEXT_URL="$PR_URL"
+          # ================================
+          # FAILED TEST LIST
+          # ================================
+          if [ "$FAILED_TESTS" != "0" ]; then
+            FAILED_SECTION="Failed Tests:\n$FAILED_TEST_DETAILS\n\n🔍 View Detail → $CLOUD_URL"
           else
-            CONTEXT_INFO="${{ github.ref_name }}"
-            CONTEXT_URL="$RUN_URL"
+            FAILED_SECTION=""
           fi
 
-          # Format failed tests + link ke Cypress Cloud
-          if [ -n "$FAILED_TEST_DETAILS" ] && [ "$FAILED_TEST_DETAILS" != "" ]; then
-            FAILED_DISPLAY="${FAILED_TEST_DETAILS}
+          # ================================
+          # MESSAGE BODY (KATALON STYLE)
+          # ================================
+          DESCRIPTION="Test Run #${{ github.run_number }} has $STATUS.
 
-          [🔍 Lihat Detail di Cypress Cloud →](${CLOUD_URL})"
-          else
-            FAILED_DISPLAY="✅ Semua test passed!"
-          fi
+          📦 Suite : Cypress Automation
+          ⏱ Duration : $TEST_DURATION
+          $RESULT_LINE
+
+          $FAILED_SECTION
+
+          Project : ${{ github.repository }}"
 
           jq -n \
-            --arg trigger       "$TRIGGER_LABEL" \
-            --arg runNumber     "${{ github.run_number }}" \
-            --arg runAttempt    "${{ github.run_attempt }}" \
-            --arg branch        "${{ github.ref_name }}" \
-            --arg contextInfo   "$CONTEXT_INFO" \
-            --arg contextUrl    "$CONTEXT_URL" \
-            --arg status        "$STATUS" \
-            --arg total         "$TOTAL_TESTS" \
-            --arg passed        "$PASSED_TESTS" \
-            --arg failed        "$FAILED_TESTS" \
-            --arg pending       "$PENDING_TESTS" \
-            --arg passRate      "$PASS_RATE" \
-            --arg duration      "$TEST_DURATION" \
-            --arg cloudUrl      "$CLOUD_URL" \
-            --arg artifactUrl   "$ARTIFACT_URL" \
-            --arg icon          "$ICON" \
-            --arg failedDisplay "$FAILED_DISPLAY" \
-            --argjson color     $COLOR \
-          '{
-            embeds: [{
-              title: ($icon + " Cypress Report — " + $status),
-              url: $cloudUrl,
-              color: $color,
-              fields: [
-                { name: "Trigger",    value: $trigger,                                          inline: true },
-                { name: "Test Run",        value: ("#" + $runNumber + " · Attempt " + $runAttempt), inline: true },
-                { name: "Duration",    value: $duration,                                         inline: true },
-                { name: "Branch/PR",  value: ("[" + $contextInfo + "](" + $contextUrl + ")"),   inline: true },
-                { name: "Pass Rate",  value: $passRate,                                         inline: true },
-                # { name: "📦 Allure",     value: ("[Download →](" + $artifactUrl + ")"),            inline: true },
-                { name: "Total TC",      value: $total,                                            inline: true },
-                { name: "✅ Passed",     value: $passed,                                           inline: true },
-                { name: "❌ Failed",     value: $failed,                                           inline: true },
-                { name: "❗ Failed Tests", value: $failedDisplay }
-              ],
-              footer: { text: ("GitHub Actions • Cypress Cloud • Run #" + $runNumber) },
-              timestamp: (now | todateiso8601)
-            }]
-          }' \
+            --arg title "$ICON Automation Report Cypress" \
+            --arg desc "$DESCRIPTION" \
+            --argjson color $COLOR \
+            '{
+              embeds: [{
+                title: $title,
+                description: $desc,
+                color: $color,
+                timestamp: (now | todateiso8601)
+              }]
+            }' \
           | curl -s -H "Content-Type: application/json" \
               -X POST \
               -d @- \
