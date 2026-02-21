@@ -63,15 +63,14 @@ jobs:
           set +e
 
           npx cypress run \
-          --record \
-          --key ${{ secrets.CYPRESS_RECORD_KEY }} \
-          --reporter json \
-          --reporter-options "output=cypress-report.json"
+            --record \
+            --key ${{ secrets.CYPRESS_RECORD_KEY }} \
+            --reporter mocha \
+            --reporter-options reporter=json,output=cypress-report.json
 
-          CYPRESS_EXIT_CODE=${PIPESTATUS[0]}
-
+          CYPRESS_EXIT_CODE=$?
           echo "CYPRESS_EXIT_CODE=$CYPRESS_EXIT_CODE" >> $GITHUB_ENV
-          echo "Cypress exit code: $CYPRESS_EXIT_CODE"
+          # echo "Cypress exit code: $CYPRESS_EXIT_CODE"
         env:
           allure: true
           allureResultsPath: allure-results
