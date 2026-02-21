@@ -102,32 +102,52 @@ jobs:
           retention-days: 30
 
       # ============================================================
-      # ✅ EXTRACT SUMMARY untuk Discord notification
+      # ✅ EXTRACT SUMMARY — ambil dari Cypress Cloud API (data akurat)
+      # fallback ke mochawesome jika API tidak tersedia
       # ============================================================
-      - name: Extract test summary
+      - name: Extract test summary from Cypress Cloud API
         if: always()
         run: |
-          if [ -f results/mochawesome.json ]; then
-            TOTAL_TESTS=$(jq '.stats.tests // 0'     results/mochawesome.json)
-            FAILED_TESTS=$(jq '.stats.failures // 0' results/mochawesome.json)
-            PASSED_TESTS=$(jq '.stats.passes // 0'   results/mochawesome.json)
-            PENDING_TESTS=$(jq '.stats.pending // 0' results/mochawesome.json)
-            DURATION_MS=$(jq '.stats.duration // 0'  results/mochawesome.json)
+          # Ambil run terbaru dari Cypress Cloud API
+          API_RESPONSE=$(curl -s \
+            -H "Authorization: Bearer ${{ secrets.CYPRESS_RECORD_KEY }}" \
+            "https://api.cypress.io/projects/wipkva/runs?perPage=1" 2>/dev/null || echo "")
+
+          # Coba parse dari Cypress Cloud API
+          if echo "$API_RESPONSE" | jq -e '.runs[0]' > /dev/null 2>&1; then
+            TOTAL_TESTS=$(echo "$API_RESPONSE" | jq '.runs[0].stats.tests // 0')
+            FAILED_TESTS=$(echo "$API_RESPONSE" | jq '.runs[0].stats.failures // 0')
+            PASSED_TESTS=$(echo "$API_RESPONSE" | jq '.runs[0].stats.passes // 0')
+            PENDING_TESTS=$(echo "$API_RESPONSE" | jq '.runs[0].stats.pending // 0')
+            DURATION_MS=$(echo "$API_RESPONSE"  | jq '.runs[0].stats.wallClockDuration // 0')
+            echo "📡 Stats dari Cypress Cloud API"
+          elif [ -f results/mochawesome.json ]; then
+            # Fallback: deduplicate test dari mochawesome (ambil unique test titles)
+            TOTAL_TESTS=$(jq '[ .. | objects | select(.fullTitle?) | .fullTitle ] | unique | length' results/mochawesome.json)
+            FAILED_TESTS=$(jq '[ .. | objects | select(.fail == true and .fullTitle?) | .fullTitle ] | unique | length' results/mochawesome.json)
+            PASSED_TESTS=$(jq '[ .. | objects | select(.pass == true and .fullTitle?) | .fullTitle ] | unique | length' results/mochawesome.json)
+            PENDING_TESTS=$(jq '[ .. | objects | select(.pending == true and .fullTitle?) | .fullTitle ] | unique | length' results/mochawesome.json)
+            # Duration: ambil max (durasi run terpanjang, bukan total semua spec)
+            DURATION_MS=$(jq '[.. | objects | select(.duration?) | .duration] | max // 0' results/mochawesome.json)
+            echo "📄 Stats dari mochawesome (fallback)"
           else
             TOTAL_TESTS=0; FAILED_TESTS=0; PASSED_TESTS=0; PENDING_TESTS=0; DURATION_MS=0
           fi
 
-          # Guard: pastikan DURATION_MS adalah angka valid
-          if ! [[ "$DURATION_MS" =~ ^[0-9]+$ ]]; then
-            DURATION_MS=0
-          fi
+          # Guard: pastikan semua nilai adalah angka valid
+          for VAR in TOTAL_TESTS FAILED_TESTS PASSED_TESTS PENDING_TESTS DURATION_MS; do
+            VAL="${!VAR}"
+            if ! [[ "$VAL" =~ ^[0-9]+$ ]]; then
+              declare $VAR=0
+            fi
+          done
 
           DURATION_SEC=$((DURATION_MS / 1000))
           MINUTES=$((DURATION_SEC / 60))
           SECONDS=$((DURATION_SEC % 60))
 
-          # Hitung pass rate
-          if [ "$TOTAL_TESTS" -gt 0 ] 2>/dev/null; then
+          # Pass rate
+          if [ "$TOTAL_TESTS" -gt 0 ]; then
             PASS_RATE=$(echo "scale=1; $PASSED_TESTS * 100 / $TOTAL_TESTS" | bc)
           else
             PASS_RATE="0"
@@ -139,6 +159,9 @@ jobs:
           echo "PENDING_TESTS=$PENDING_TESTS"          >> $GITHUB_ENV
           echo "TEST_DURATION=${MINUTES}m ${SECONDS}s" >> $GITHUB_ENV
           echo "PASS_RATE=${PASS_RATE}%"               >> $GITHUB_ENV
+
+          echo "=== Summary ==="
+          echo "Total: $TOTAL_TESTS | Passed: $PASSED_TESTS | Failed: $FAILED_TESTS | Duration: ${MINUTES}m ${SECONDS}s"
 
       - name: Extract failed tests
         if: always()
