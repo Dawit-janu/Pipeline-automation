@@ -20,7 +20,6 @@ on:
      - cron: '*/5 * * * *'
 
 
-
 jobs:
   cypress-run:
     runs-on: ubuntu-latest
@@ -56,9 +55,14 @@ jobs:
         continue-on-error: true
         run: |
           mkdir -p results allure-results
+          # CI_BUILD_ID unik per run → dipakai untuk filter API Cypress Cloud
+          CI_BUILD_ID="${{ github.repository }}-${{ github.run_id }}-${{ github.run_attempt }}"
+          echo "CI_BUILD_ID=$CI_BUILD_ID" >> $GITHUB_ENV
+
           npx cypress run \
             --record \
             --key ${{ secrets.CYPRESS_RECORD_KEY }} \
+            --ci-build-id "$CI_BUILD_ID" \
             --reporter mochawesome \
             --reporter-options "reportDir=results,overwrite=false,html=false,json=true"
         env:
@@ -125,32 +129,46 @@ jobs:
           SECONDS=$((DURATION_SEC % 60))
           echo "⏱ Duration: ${MINUTES}m ${SECONDS}s (dari GitHub timestamps)"
 
-          # 📊 Stats dari Cypress Cloud API (test count akurat, tidak dobel retry)
-          API_RESPONSE=$(curl -s \
-            -H "Authorization: Bearer ${{ secrets.CYPRESS_RECORD_KEY }}" \
-            "https://api.cypress.io/projects/wipkva/runs?perPage=1" 2>/dev/null || echo "")
+          # 📊 Stats dari Cypress Cloud API — filter by ciBuildId
+          TOTAL_TESTS=0; FAILED_TESTS=0; PASSED_TESTS=0; PENDING_TESTS=0
 
-          if echo "$API_RESPONSE" | jq -e '.runs[0]' > /dev/null 2>&1; then
-            TOTAL_TESTS=$(echo "$API_RESPONSE" | jq '.runs[0].stats.tests // 0')
-            FAILED_TESTS=$(echo "$API_RESPONSE" | jq '.runs[0].stats.failures // 0')
-            PASSED_TESTS=$(echo "$API_RESPONSE" | jq '.runs[0].stats.passes // 0')
-            PENDING_TESTS=$(echo "$API_RESPONSE" | jq '.runs[0].stats.pending // 0')
-            echo "📡 Stats dari Cypress Cloud API: total=$TOTAL_TESTS passed=$PASSED_TESTS failed=$FAILED_TESTS"
-          elif [ -f results/mochawesome.json ]; then
-            TOTAL_TESTS=$(jq '[ .. | objects | select(.fullTitle?) | .fullTitle ] | unique | length' results/mochawesome.json)
-            FAILED_TESTS=$(jq '[ .. | objects | select(.fail == true and .fullTitle?) | .fullTitle ] | unique | length' results/mochawesome.json)
-            PASSED_TESTS=$(jq '[ .. | objects | select(.pass == true and .fullTitle?) | .fullTitle ] | unique | length' results/mochawesome.json)
-            PENDING_TESTS=$(jq '[ .. | objects | select(.pending == true and .fullTitle?) | .fullTitle ] | unique | length' results/mochawesome.json)
-            echo "📄 Stats dari mochawesome (fallback)"
-          else
-            TOTAL_TESTS=0; FAILED_TESTS=0; PASSED_TESTS=0; PENDING_TESTS=0
+          API_RESPONSE=$(curl -s             -H "Authorization: Bearer ${{ secrets.CYPRESS_RECORD_KEY }}"             "https://api.cypress.io/projects/wipkva/runs?perPage=5" 2>/dev/null || echo "")
+
+          if [ -n "$API_RESPONSE" ]; then
+            # Coba match by ciBuildId
+            MATCHED_RUN=$(echo "$API_RESPONSE" | jq --arg bid "$CI_BUILD_ID"               '.runs[]? | select(.ciBuildId == $bid)' 2>/dev/null || echo "")
+
+            # Fallback ke run terbaru
+            if [ -z "$MATCHED_RUN" ]; then
+              MATCHED_RUN=$(echo "$API_RESPONSE" | jq '.runs[0] // empty' 2>/dev/null || echo "")
+              echo "⚠️ Fallback ke run terbaru"
+            else
+              echo "✅ Matched by ciBuildId: $CI_BUILD_ID"
+            fi
+
+            if [ -n "$MATCHED_RUN" ]; then
+              TOTAL_TESTS=$(echo "$MATCHED_RUN"  | jq '.stats.tests // 0' 2>/dev/null || echo 0)
+              FAILED_TESTS=$(echo "$MATCHED_RUN" | jq '.stats.failures // 0' 2>/dev/null || echo 0)
+              PASSED_TESTS=$(echo "$MATCHED_RUN" | jq '.stats.passes // 0' 2>/dev/null || echo 0)
+              PENDING_TESTS=$(echo "$MATCHED_RUN"| jq '.stats.pending // 0' 2>/dev/null || echo 0)
+              echo "📡 Stats: total=$TOTAL_TESTS passed=$PASSED_TESTS failed=$FAILED_TESTS"
+            fi
           fi
 
-          # Guard: pastikan semua nilai angka valid
-          for VAR in TOTAL_TESTS FAILED_TESTS PASSED_TESTS PENDING_TESTS; do
-            VAL="${!VAR}"
-            if ! [[ "$VAL" =~ ^[0-9]+$ ]]; then declare $VAR=0; fi
-          done
+          # Fallback ke mochawesome jika API tidak return data
+          if [ "$TOTAL_TESTS" = "0" ] && [ -f results/mochawesome.json ]; then
+            TOTAL_TESTS=$(jq '[ .. | objects | select(.fullTitle?) | .fullTitle ] | unique | length' results/mochawesome.json 2>/dev/null || echo 0)
+            FAILED_TESTS=$(jq '[ .. | objects | select(.fail == true and .fullTitle?) | .fullTitle ] | unique | length' results/mochawesome.json 2>/dev/null || echo 0)
+            PASSED_TESTS=$(jq '[ .. | objects | select(.pass == true and .fullTitle?) | .fullTitle ] | unique | length' results/mochawesome.json 2>/dev/null || echo 0)
+            PENDING_TESTS=$(jq '[ .. | objects | select(.pending == true and .fullTitle?) | .fullTitle ] | unique | length' results/mochawesome.json 2>/dev/null || echo 0)
+            echo "📄 Stats dari mochawesome (fallback)"
+          fi
+
+          # Guard sederhana tanpa declare/[[
+          TOTAL_TESTS=$(echo "$TOTAL_TESTS" | tr -d '"' | grep -E "^[0-9]+$" || echo 0)
+          FAILED_TESTS=$(echo "$FAILED_TESTS" | tr -d '"' | grep -E "^[0-9]+$" || echo 0)
+          PASSED_TESTS=$(echo "$PASSED_TESTS" | tr -d '"' | grep -E "^[0-9]+$" || echo 0)
+          PENDING_TESTS=$(echo "$PENDING_TESTS" | tr -d '"' | grep -E "^[0-9]+$" || echo 0)
 
           # Pass rate
           if [ "$TOTAL_TESTS" -gt 0 ]; then
@@ -172,27 +190,29 @@ jobs:
       - name: Extract failed tests
         if: always()
         run: |
-          # ✅ Ambil failed list dari Cypress Cloud API (sinkron dengan dashboard)
-          API_RESPONSE=$(curl -s \
-            -H "Authorization: Bearer ${{ secrets.CYPRESS_RECORD_KEY }}" \
-            "https://api.cypress.io/projects/wipkva/runs?perPage=1" 2>/dev/null || echo "")
+          FAILED_TEST_DETAILS=""
 
-          if echo "$API_RESPONSE" | jq -e '.runs[0]' > /dev/null 2>&1; then
-            # Ambil failed spec/test dari Cypress Cloud API
-            FAILED_TEST_DETAILS=$(echo "$API_RESPONSE" | jq -r '
-              .runs[0].specs[]?
-              | select(.stats.failures > 0)
-              | .spec.relative
-              | "• " + .
-            ' 2>/dev/null || echo "")
-            echo "📡 Failed list dari Cypress Cloud API"
+          # ✅ Ambil failed list dari Cypress Cloud API
+          API_RESPONSE=$(curl -s             -H "Authorization: Bearer ${{ secrets.CYPRESS_RECORD_KEY }}"             "https://api.cypress.io/projects/wipkva/runs?perPage=5" 2>/dev/null || echo "")
+
+          if [ -n "$API_RESPONSE" ]; then
+            # Coba match by ciBuildId dulu
+            MATCHED_RUN=$(echo "$API_RESPONSE" | jq --arg bid "$CI_BUILD_ID"               '.runs[]? | select(.ciBuildId == $bid)' 2>/dev/null || echo "")
+
+            # Fallback ke run terbaru
+            if [ -z "$MATCHED_RUN" ]; then
+              MATCHED_RUN=$(echo "$API_RESPONSE" | jq '.runs[0] // empty' 2>/dev/null || echo "")
+            fi
+
+            if [ -n "$MATCHED_RUN" ]; then
+              FAILED_TEST_DETAILS=$(echo "$MATCHED_RUN" | jq -r                 '.specs[]? | select(.stats.failures > 0) | "• " + .spec.relative'                 2>/dev/null || echo "")
+              echo "📡 Failed specs dari Cypress Cloud API"
+            fi
           fi
 
-          # Fallback ke mochawesome jika API gagal atau kosong
+          # Fallback ke mochawesome
           if [ -z "$FAILED_TEST_DETAILS" ] && [ -f results/mochawesome.json ]; then
-            FAILED_TEST_DETAILS=$(jq -r '
-              [ .. | objects | select(.fail == true and .fullTitle?) | .fullTitle ] | unique[] | "• " + .
-            ' results/mochawesome.json 2>/dev/null || echo "")
+            FAILED_TEST_DETAILS=$(jq -r               '[ .. | objects | select(.fail == true and .fullTitle?) | .fullTitle ] | unique[] | "• " + .'               results/mochawesome.json 2>/dev/null || echo "")
             echo "📄 Failed list dari mochawesome (fallback)"
           fi
 
