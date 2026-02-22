@@ -118,22 +118,11 @@ jobs:
             PASS_RATE="0"
           fi
 
-          # Debug: lihat baris Running di output
-          echo "=== RUNNING LINES ==="
-          grep -i "Running:" cypress-output.txt | head -5
-
-          # TS folder name — ambil folder parent dari path spec
-          # Cypress print: "Running: TS-itera/TC01-Dashboard.cy.js" atau
-          #                "Running: cypress/e2e/TS-itera/TC01-Dashboard.cy.js"
-          TS_NAME=$(grep -oE 'Running:[[:space:]]+[^ ]+' cypress-output.txt             | sed 's/Running:[[:space:]]*//'             | sed 's|[^/]*/||g; s|/[^/]*$||'             | grep -v '^\s*$'             | sort -u | head -1)
-
-          echo "=== TS_NAME RAW: $TS_NAME ==="
-
-          # Jika hasilnya masih berisi slash, ambil bagian terakhir
-          TS_NAME=$(echo "$TS_NAME" | sed 's|.*/||')
-          TS_NAME=${TS_NAME:-"TS-unknown"}
-
-          echo "=== TS_NAME FINAL: $TS_NAME ==="
+          # TS folder name — ambil dari struktur folder e2e di repo
+          # Struktur: cypress/e2e/TS-xxx/TC01.cy.js → ambil folder TS-xxx
+          TS_NAME=$(find cypress/e2e -mindepth 1 -maxdepth 1 -type d -name "TS-*"             | sed 's|.*/||' | sort | sed 's/^/• /')
+          TS_NAME=${TS_NAME:-"• e2e"}
+          echo "=== TS_NAME: $TS_NAME ==="
 
           echo "TOTAL_TESTS=$TOTAL"                    >> $GITHUB_ENV
           echo "PASSED_TESTS=$PASSING"                 >> $GITHUB_ENV
@@ -142,7 +131,6 @@ jobs:
           echo "TEST_DURATION=${MINUTES}m ${SECONDS}s" >> $GITHUB_ENV
           echo "PASS_RATE=${PASS_RATE}%"               >> $GITHUB_ENV
           echo "TS_NAME=$TS_NAME"                      >> $GITHUB_ENV
-          echo "SUITE_LIST=$SUITE_LIST"                >> $GITHUB_ENV
 
           echo "Total=$TOTAL | Passed=$PASSING | Failed=$FAILING | TS=$TS_NAME"
 
@@ -166,8 +154,15 @@ jobs:
           echo "TEST_RESULTS_URL=$TEST_RESULTS_URL" >> $GITHUB_ENV
 
           # Ambil failed specs dari tabel (baris dengan ✖)
-          # Format: "│ ✖  TC01-Dashboard.cy.js  ..."
-          FAILED_SPECS=$(grep -E "│\s+✖" cypress-output.txt             | grep -oE "[A-Za-z0-9_-]+\.cy\.js"             | sed "s/\.cy\.js$//"             | sort -u)
+          # Format tabel: "│ ✖  TS-itera/TC01-Dashboard.cy.js  ..."
+          # Kita ambil path lengkap termasuk folder TS
+          FAILED_SPECS=$(grep -E "│\s+✖" cypress-output.txt             | grep -oE "[A-Za-z0-9_/-]+\.cy\.js"             | sed "s/\.cy\.js$//"             | sort -u)
+
+          # Fallback: jika tidak ada path lengkap, coba tanpa folder
+          if [ -z "$FAILED_SPECS" ]; then
+            FAILED_SPECS=$(grep -E "✖" cypress-output.txt               | grep "\.cy\.js"               | grep -oE "[A-Za-z0-9_/-]+\.cy\.js"               | sed "s/\.cy\.js$//"               | sort -u)
+          fi
+
           echo "=== FAILED SPECS: $FAILED_SPECS ==="
 
           # Parse describe + test title dari section failing
@@ -276,28 +271,28 @@ jobs:
           if [ -n "$FAILED_SECTION" ]; then
             BODY="${BODY}
 
-            ${FAILED_SECTION}"
-                      fi
+          ${FAILED_SECTION}"
+                    fi
 
-                      FOOTER="${REPO} | ${BRANCH_INFO} | ${TRIGGER_LABEL}"
+          FOOTER="${REPO} | ${BRANCH_INFO} | ${TRIGGER_LABEL}"
 
-                      jq -n \
-                        --arg title  "$TITLE" \
-                        --arg body   "$BODY" \
-                        --arg footer "$FOOTER" \
-                        --arg url    "$DISPLAY_URL" \
-                        --argjson color $COLOR \
-                      '{
-                        embeds: [{
-                          title: $title,
-                          url: $url,
-                          description: $body,
-                          color: $color,
-                          footer: { text: $footer },
-                          timestamp: (now | todateiso8601)
-                        }]
-                      }' \
-                      | curl -s -H "Content-Type: application/json" \
-                          -X POST \
-                          -d @- \
-                          ${{ secrets.DISCORD_WEBHOOK }}
+          jq -n \
+            --arg title  "$TITLE" \
+            --arg body   "$BODY" \
+            --arg footer "$FOOTER" \
+            --arg url    "$DISPLAY_URL" \
+            --argjson color $COLOR \
+          '{
+            embeds: [{
+              title: $title,
+              url: $url,
+              description: $body,
+              color: $color,
+              footer: { text: $footer },
+              timestamp: (now | todateiso8601)
+            }]
+          }' \
+          | curl -s -H "Content-Type: application/json" \
+              -X POST \
+              -d @- \
+              ${{ secrets.DISCORD_WEBHOOK }}
