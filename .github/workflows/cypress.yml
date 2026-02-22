@@ -281,11 +281,9 @@ jobs:
           ⏱  ${TEST_DURATION}
 
           **Results**
-          Total Run   : ${TOTAL}
-
-          ✅  Passed  : ${PASSED}
-          
-          ❌  Failed  : ${FAILED}"
+          Total Runs    : ${TOTAL}
+          ✅  Passed    : ${PASSED}
+          ❌  Failed    : ${FAILED}"
 
           if [ -n "$FAILED_SECTION" ]; then
             BODY="${BODY}
