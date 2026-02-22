@@ -142,6 +142,7 @@ jobs:
           echo "TEST_DURATION=${MINUTES}m ${SECONDS}s" >> $GITHUB_ENV
           echo "PASS_RATE=${PASS_RATE}%"               >> $GITHUB_ENV
           echo "TS_NAME=$TS_NAME"                      >> $GITHUB_ENV
+          echo "SUITE_LIST=$SUITE_LIST"                >> $GITHUB_ENV
 
           echo "Total=$TOTAL | Passed=$PASSING | Failed=$FAILING | TS=$TS_NAME"
 
@@ -166,10 +167,7 @@ jobs:
 
           # Ambil failed specs dari tabel (baris dengan ✖)
           # Format: "│ ✖  TC01-Dashboard.cy.js  ..."
-          FAILED_SPECS=$(grep -E "│\s+✖" cypress-output.txt             
-          | grep -oE "[A-Za-z0-9_-]+\.cy\.js"             
-          | sed "s/\.cy\.js$//"             
-          | sort -u)
+          FAILED_SPECS=$(grep -E "│\s+✖" cypress-output.txt             | grep -oE "[A-Za-z0-9_-]+\.cy\.js"             | sed "s/\.cy\.js$//"             | sort -u)
           echo "=== FAILED SPECS: $FAILED_SPECS ==="
 
           # Parse describe + test title dari section failing
@@ -278,28 +276,28 @@ jobs:
           if [ -n "$FAILED_SECTION" ]; then
             BODY="${BODY}
 
-          ${FAILED_SECTION}"
-                    fi
+            ${FAILED_SECTION}"
+                      fi
 
-          FOOTER="${REPO} | ${BRANCH_INFO} | ${TRIGGER_LABEL}"
+                      FOOTER="${REPO} | ${BRANCH_INFO} | ${TRIGGER_LABEL}"
 
-          jq -n \
-            --arg title  "$TITLE" \
-            --arg body   "$BODY" \
-            --arg footer "$FOOTER" \
-            --arg url    "$DISPLAY_URL" \
-            --argjson color $COLOR \
-          '{
-            embeds: [{
-              title: $title,
-              url: $url,
-              description: $body,
-              color: $color,
-              footer: { text: $footer },
-              timestamp: (now | todateiso8601)
-            }]
-          }' \
-          | curl -s -H "Content-Type: application/json" \
-              -X POST \
-              -d @- \
-              ${{ secrets.DISCORD_WEBHOOK }}
+                      jq -n \
+                        --arg title  "$TITLE" \
+                        --arg body   "$BODY" \
+                        --arg footer "$FOOTER" \
+                        --arg url    "$DISPLAY_URL" \
+                        --argjson color $COLOR \
+                      '{
+                        embeds: [{
+                          title: $title,
+                          url: $url,
+                          description: $body,
+                          color: $color,
+                          footer: { text: $footer },
+                          timestamp: (now | todateiso8601)
+                        }]
+                      }' \
+                      | curl -s -H "Content-Type: application/json" \
+                          -X POST \
+                          -d @- \
+                          ${{ secrets.DISCORD_WEBHOOK }}
