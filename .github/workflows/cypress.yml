@@ -120,7 +120,13 @@ jobs:
 
           # TS folder name — ambil dari struktur folder e2e di repo
           # Struktur: cypress/e2e/TS-xxx/TC01.cy.js → ambil folder TS-xxx
-          TS_NAME=$(find cypress/e2e -mindepth 1 -maxdepth 1 -type d -name "TS-*"             | sed 's|.*/||' | sort | sed 's/^/• /')
+          # TS folder — ambil dari spec yang actual dijalankan di run ini
+          # Tabel Cypress print path lengkap: "│ ✔  TS-itera/TC01-Dashboard.cy.js ..."
+          TS_NAME=$(grep -E "│\s+[✔✖]" cypress-output.txt             | grep -oE "[A-Za-z0-9_-]+/[A-Za-z0-9_/-]+\.cy\.js"             | sed 's|/[^/]*$||'             | sort -u             | sed 's/^/• /')
+          # Fallback ke folder di repo jika parse gagal
+          if [ -z "$TS_NAME" ]; then
+            TS_NAME=$(find cypress/e2e -mindepth 1 -maxdepth 1 -type d -name "TS-*"               | sed 's|.*/||' | sort | sed 's/^/• /')
+          fi
           TS_NAME=${TS_NAME:-"• e2e"}
           echo "=== TS_NAME: $TS_NAME ==="
 
