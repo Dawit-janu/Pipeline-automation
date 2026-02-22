@@ -118,21 +118,22 @@ jobs:
             PASS_RATE="0"
           fi
 
-          # TS folder name — ambil dari path: e2e/TS-xxx/TC01.cy.js → TS-xxx
-          TS_NAME=$(grep -oE 'Running:  [^ ]+' cypress-output.txt \
-            | sed 's/Running:  //' \
-            | sed 's|.*/\(TS-[^/]*\)/.*|\1|' \
-            | sort -u | head -1)
-          TS_NAME=${TS_NAME:-"e2e"}
+          # Debug: lihat baris Running di output
+          echo "=== RUNNING LINES ==="
+          grep -i "Running:" cypress-output.txt | head -5
 
-          # Spec list — nama TC tanpa .cy.js
-          SUITE_LIST=$(grep -oE 'Running:  [^ ]+' cypress-output.txt \
-            | sed 's/Running:  //' \
-            | sed 's|.*/||' \
-            | sed 's/\.cy\.js$//' \
-            | sort -u \
-            | tr '\n' ', ' \
-            | sed 's/, $//')
+          # TS folder name — ambil folder parent dari path spec
+          # Cypress print: "Running: TS-itera/TC01-Dashboard.cy.js" atau
+          #                "Running: cypress/e2e/TS-itera/TC01-Dashboard.cy.js"
+          TS_NAME=$(grep -oE 'Running:[[:space:]]+[^ ]+' cypress-output.txt             | sed 's/Running:[[:space:]]*//'             | sed 's|[^/]*/||g; s|/[^/]*$||'             | grep -v '^\s*$'             | sort -u | head -1)
+
+          echo "=== TS_NAME RAW: $TS_NAME ==="
+
+          # Jika hasilnya masih berisi slash, ambil bagian terakhir
+          TS_NAME=$(echo "$TS_NAME" | sed 's|.*/||')
+          TS_NAME=${TS_NAME:-"TS-unknown"}
+
+          echo "=== TS_NAME FINAL: $TS_NAME ==="
 
           echo "TOTAL_TESTS=$TOTAL"                    >> $GITHUB_ENV
           echo "PASSED_TESTS=$PASSING"                 >> $GITHUB_ENV
@@ -259,9 +260,9 @@ jobs:
                       fi
                     fi
 
-                    # Judul dan body
-                    TITLE="Automation Report Cypress"
-                    DESC="Test Run [#${{ github.run_number }}](${CLOUD_URL}) of the **${REPO_NAME}** ${STATUS_TEXT}."
+          # Judul dan body
+          TITLE="Automation Report Cypress"
+          DESC="Test Run [#${{ github.run_number }}](${CLOUD_URL}) of the **${REPO_NAME}** ${STATUS_TEXT}."
 
           BODY="${DESC}
 
@@ -275,28 +276,28 @@ jobs:
           if [ -n "$FAILED_SECTION" ]; then
             BODY="${BODY}
 
-          ${FAILED_SECTION}"
-                    fi
+            ${FAILED_SECTION}"
+                      fi
 
-                    FOOTER="${REPO} | ${BRANCH_INFO} | ${TRIGGER_LABEL}"
+                      FOOTER="${REPO} | ${BRANCH_INFO} | ${TRIGGER_LABEL}"
 
-                    jq -n \
-                      --arg title  "$TITLE" \
-                      --arg body   "$BODY" \
-                      --arg footer "$FOOTER" \
-                      --arg url    "$DISPLAY_URL" \
-                      --argjson color $COLOR \
-                    '{
-                      embeds: [{
-                        title: $title,
-                        url: $url,
-                        description: $body,
-                        color: $color,
-                        footer: { text: $footer },
-                        timestamp: (now | todateiso8601)
-                      }]
-                    }' \
-                    | curl -s -H "Content-Type: application/json" \
-                        -X POST \
-                        -d @- \
-                        ${{ secrets.DISCORD_WEBHOOK }}
+                      jq -n \
+                        --arg title  "$TITLE" \
+                        --arg body   "$BODY" \
+                        --arg footer "$FOOTER" \
+                        --arg url    "$DISPLAY_URL" \
+                        --argjson color $COLOR \
+                      '{
+                        embeds: [{
+                          title: $title,
+                          url: $url,
+                          description: $body,
+                          color: $color,
+                          footer: { text: $footer },
+                          timestamp: (now | todateiso8601)
+                        }]
+                      }' \
+                      | curl -s -H "Content-Type: application/json" \
+                          -X POST \
+                          -d @- \
+                          ${{ secrets.DISCORD_WEBHOOK }}
