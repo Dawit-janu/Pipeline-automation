@@ -136,7 +136,9 @@ jobs:
           echo "PENDING_TESTS=$PENDING"                >> $GITHUB_ENV
           echo "TEST_DURATION=${MINUTES}m ${SECONDS}s" >> $GITHUB_ENV
           echo "PASS_RATE=${PASS_RATE}%"               >> $GITHUB_ENV
-          echo "TS_NAME=$TS_NAME"                      >> $GITHUB_ENV
+          echo "TS_NAME<<EOF"   >> $GITHUB_ENV
+          echo "$TS_NAME"       >> $GITHUB_ENV
+          echo "EOF"            >> $GITHUB_ENV
 
           echo "Total=$TOTAL | Passed=$PASSING | Failed=$FAILING | TS=$TS_NAME"
 
