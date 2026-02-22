@@ -6,7 +6,7 @@ describe('Login', () => {
 
 //Success Login
     it('Success Login', () => {
-        cy.visit('https://www.demoblaze.com/')
+        // cy.visit('https://www.demoblaze.com/')
         cy.get('#login2').click()
         cy.get('#loginusername').type('Test')
         cy.get('#loginpassword').type('Password123')
