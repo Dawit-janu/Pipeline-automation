@@ -90,32 +90,25 @@ jobs:
           MINUTES=$((DURATION_SEC / 60))
           SECONDS=$((DURATION_SEC % 60))
 
-          # Ambil grand total dari section "Results:" di bagian akhir output Cypress
-          # Cypress sudah hitung total — kita tinggal ambil dari sana
-          IN_RESULTS=0
-          PASSING=0; FAILING=0; PENDING=0
-          while IFS= read -r line; do
-            if echo "$line" | grep -qE '^\s+Tests:\s+[0-9]+'; then
-              IN_RESULTS=1
-            fi
-            if [ "$IN_RESULTS" = "1" ]; then
-              if echo "$line" | grep -qE '^\s+Passing:'; then
-                PASSING=$(echo "$line" | grep -oE '[0-9]+' | head -1)
-              fi
-              if echo "$line" | grep -qE '^\s+Failing:'; then
-                FAILING=$(echo "$line" | grep -oE '[0-9]+' | head -1)
-              fi
-              if echo "$line" | grep -qE '^\s+Pending:'; then
-                PENDING=$(echo "$line" | grep -oE '[0-9]+' | head -1)
-              fi
-            fi
-          done < cypress-output.txt
+          # Format output Cypress adalah TABEL, baris summary ada di baris terakhir:
+          # "✔  All specs passed!    00:09    3    3    -    -    -"
+          # atau
+          # "✖  N of N failed (...)  00:09    3    2    1    -    -"
+          # Kolom: Duration, Tests, Passing, Failing, Pending, Skipped
 
-          # Fallback: kalau Results block tidak ada, ambil baris terakhir passing/failing
-          if [ "${PASSING:-0}" = "0" ] && [ "${FAILING:-0}" = "0" ]; then
-            PASSING=$(grep -E '^\s+[0-9]+ passing' cypress-output.txt | tail -1 | grep -oE '[0-9]+' | head -1)
-            FAILING=$(grep -E '^\s+[0-9]+ failing' cypress-output.txt | tail -1 | grep -oE '[0-9]+' | head -1)
-            PENDING=$(grep -E '^\s+[0-9]+ pending' cypress-output.txt | tail -1 | grep -oE '[0-9]+' | head -1)
+          SUMMARY_LINE=$(grep -E '(All specs passed|of [0-9]+ failed)' cypress-output.txt | tail -1)
+          echo "=== SUMMARY LINE: $SUMMARY_LINE ==="
+
+          if [ -n "$SUMMARY_LINE" ]; then
+            # Ambil semua angka dari baris summary (skip durasi format MM:SS)
+            # Angka yang kita mau: Tests Passing Failing Pending Skipped
+            NUMBERS=$(echo "$SUMMARY_LINE" | grep -oE '[0-9]+' | grep -v '^0[0-9]$' | paste -sd ' ')
+            echo "=== NUMBERS: $NUMBERS ==="
+
+            TOTAL=$(echo $NUMBERS   | awk '{print $1}')
+            PASSING=$(echo $NUMBERS | awk '{print $2}')
+            FAILING=$(echo $NUMBERS | awk '{print $3}')
+            PENDING=$(echo $NUMBERS | awk '{print $4}')
           fi
 
           PASSING=${PASSING:-0}
@@ -228,46 +221,46 @@ jobs:
           if [ "$FAILED" != "0" ]; then
             if [ -n "$FAILED_TEST_DETAILS" ]; then
               LINE5="${FAILED} test results failed
-            ${FAILED_TEST_DETAILS}"
-                        else
-                          LINE5="${FAILED} test results failed"
-                        fi
-                        BODY="${DESC}
-
-            ${LINE2}
-            ${LINE3}
-            ${LINE4}
-
-            ${LINE5}"
+          ${FAILED_TEST_DETAILS}"
                       else
-                        BODY="${DESC}
-
-            ${LINE2}
-            ${LINE3}
-            ${LINE4}"
+                        LINE5="${FAILED} test results failed"
                       fi
+                      BODY="${DESC}
 
-                      FOOTER="${REPO} | ${BRANCH_INFO} | ${TRIGGER_LABEL}"
+          ${LINE2}
+          ${LINE3}
+          ${LINE4}
 
-                      jq -n \
-                        --arg body        "$BODY" \
-                        --arg footer      "$FOOTER" \
-                        --arg cloudUrl    "$CLOUD_URL" \
-                        --arg artifactUrl "$ARTIFACT_URL" \
-                        --argjson color   $COLOR \
-                      '{
-                        embeds: [{
-                          description: $body,
-                          color: $color,
-                          fields: [
-                            { name: "☁️ Cypress Cloud", value: ("[Open Dashboard →](" + $cloudUrl + ")"),       inline: true },
-                            { name: "📦 Allure Report", value: ("[Download Artifact →](" + $artifactUrl + ")"), inline: true }
-                          ],
-                          footer: { text: $footer },
-                          timestamp: (now | todateiso8601)
-                        }]
-                      }' \
-                      | curl -s -H "Content-Type: application/json" \
-                          -X POST \
-                          -d @- \
-                          ${{ secrets.DISCORD_WEBHOOK }}
+          ${LINE5}"
+                    else
+                      BODY="${DESC}
+
+          ${LINE2}
+          ${LINE3}
+          ${LINE4}"
+                    fi
+
+                    FOOTER="${REPO} | ${BRANCH_INFO} | ${TRIGGER_LABEL}"
+
+                    jq -n \
+                      --arg body        "$BODY" \
+                      --arg footer      "$FOOTER" \
+                      --arg cloudUrl    "$CLOUD_URL" \
+                      --arg artifactUrl "$ARTIFACT_URL" \
+                      --argjson color   $COLOR \
+                    '{
+                      embeds: [{
+                        description: $body,
+                        color: $color,
+                        fields: [
+                          { name: "☁️ Cypress Cloud", value: ("[Open Dashboard →](" + $cloudUrl + ")"),       inline: true },
+                          { name: "📦 Allure Report", value: ("[Download Artifact →](" + $artifactUrl + ")"), inline: true }
+                        ],
+                        footer: { text: $footer },
+                        timestamp: (now | todateiso8601)
+                      }]
+                    }' \
+                    | curl -s -H "Content-Type: application/json" \
+                        -X POST \
+                        -d @- \
+                        ${{ secrets.DISCORD_WEBHOOK }}
