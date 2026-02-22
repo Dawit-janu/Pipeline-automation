@@ -45,7 +45,7 @@ jobs:
         run: npm ci
 
       # ============================================================
-      # RUN CYPRESS — tee output ke file untuk parsing
+      # RUN CYPRESS
       # ============================================================
       - name: Run Cypress Tests
         continue-on-error: true
@@ -90,45 +90,27 @@ jobs:
           MINUTES=$((DURATION_SEC / 60))
           SECONDS=$((DURATION_SEC % 60))
 
-          # Baris summary Cypress (baris terakhir tabel):
+          # Parse baris summary tabel Cypress:
           # "✔  All specs passed!         00:09    3    3    -    -    -"
           # "✖  1 of 3 failed (33%)       00:11    3    2    1    -    -"
-          # Kolom (dari kanan): Skipped, Pending, Failing, Passing, Tests, Duration
-          # Kita ambil 5 kolom terakhir (Tests Passing Failing Pending Skipped)
-
+          # 5 kolom terakhir: Tests Passing Failing Pending Skipped
           SUMMARY_LINE=$(grep -E '(All specs passed|of [0-9]+ failed)' cypress-output.txt | tail -1)
           echo "=== SUMMARY LINE: $SUMMARY_LINE ==="
 
           if [ -n "$SUMMARY_LINE" ]; then
-            # Hapus karakter unicode checkmark/cross dan teks di depan
-            # Ambil 5 angka/dash terakhir dari baris (kolom tabel dari kanan)
-            # Format: ... 00:XX   TESTS  PASSING  FAILING  PENDING  SKIPPED
-            # Pakai awk: ambil field dari belakang
-            CLEAN=$(echo "$SUMMARY_LINE" | sed 's/[^0-9 	-]//g' | tr -s ' 	' ' ' | sed 's/^ //')
+            CLEAN=$(echo "$SUMMARY_LINE" | sed 's/[^0-9 \t-]//g' | tr -s ' \t' ' ' | sed 's/^ //')
             echo "=== CLEAN: $CLEAN ==="
-
-            # Hitung jumlah field
             FIELD_COUNT=$(echo "$CLEAN" | awk '{print NF}')
-            echo "=== FIELD COUNT: $FIELD_COUNT ==="
-
-            # 5 field terakhir = Tests Passing Failing Pending Skipped
-            # Field sebelumnya adalah durasi (format sudah jadi angka biasa setelah sed)
-            TOTAL=$(echo "$CLEAN"   | awk -v n=$FIELD_COUNT '{print $(n-4)}')
-            PASSING=$(echo "$CLEAN" | awk -v n=$FIELD_COUNT '{print $(n-3)}')
-            FAILING=$(echo "$CLEAN" | awk -v n=$FIELD_COUNT '{print $(n-2)}')
-            PENDING=$(echo "$CLEAN" | awk -v n=$FIELD_COUNT '{print $(n-1)}')
-
-            # Ganti "-" dengan 0
-            TOTAL=$(echo "${TOTAL:-0}"   | sed 's/-/0/')
-            PASSING=$(echo "${PASSING:-0}" | sed 's/-/0/')
-            FAILING=$(echo "${FAILING:-0}" | sed 's/-/0/')
-            PENDING=$(echo "${PENDING:-0}" | sed 's/-/0/')
+            TOTAL=$(echo "$CLEAN"   | awk -v n=$FIELD_COUNT '{print $(n-4)}' | sed 's/-/0/')
+            PASSING=$(echo "$CLEAN" | awk -v n=$FIELD_COUNT '{print $(n-3)}' | sed 's/-/0/')
+            FAILING=$(echo "$CLEAN" | awk -v n=$FIELD_COUNT '{print $(n-2)}' | sed 's/-/0/')
+            PENDING=$(echo "$CLEAN" | awk -v n=$FIELD_COUNT '{print $(n-1)}' | sed 's/-/0/')
           fi
 
+          TOTAL=${TOTAL:-0}
           PASSING=${PASSING:-0}
           FAILING=${FAILING:-0}
           PENDING=${PENDING:-0}
-          TOTAL=$(( PASSING + FAILING + PENDING ))
 
           if [ "$TOTAL" -gt 0 ]; then
             PASS_RATE=$(echo "scale=1; $PASSING * 100 / $TOTAL" | bc)
@@ -136,7 +118,14 @@ jobs:
             PASS_RATE="0"
           fi
 
-          # Suite name: nama file spec tanpa path dan .cy.js
+          # TS folder name — ambil dari path: e2e/TS-xxx/TC01.cy.js → TS-xxx
+          TS_NAME=$(grep -oE 'Running:  [^ ]+' cypress-output.txt \
+            | sed 's/Running:  //' \
+            | sed 's|.*/\(TS-[^/]*\)/.*|\1|' \
+            | sort -u | head -1)
+          TS_NAME=${TS_NAME:-"e2e"}
+
+          # Spec list — nama TC tanpa .cy.js
           SUITE_LIST=$(grep -oE 'Running:  [^ ]+' cypress-output.txt \
             | sed 's/Running:  //' \
             | sed 's|.*/||' \
@@ -151,48 +140,74 @@ jobs:
           echo "PENDING_TESTS=$PENDING"                >> $GITHUB_ENV
           echo "TEST_DURATION=${MINUTES}m ${SECONDS}s" >> $GITHUB_ENV
           echo "PASS_RATE=${PASS_RATE}%"               >> $GITHUB_ENV
+          echo "TS_NAME=$TS_NAME"                      >> $GITHUB_ENV
           echo "SUITE_LIST=$SUITE_LIST"                >> $GITHUB_ENV
 
-          echo "=== SUMMARY ==="
-          echo "Total=$TOTAL | Passed=$PASSING | Failed=$FAILING | Pending=$PENDING | Duration=${MINUTES}m ${SECONDS}s"
-          echo "Suite: $SUITE_LIST"
+          echo "Total=$TOTAL | Passed=$PASSING | Failed=$FAILING | TS=$TS_NAME"
 
-      - name: Extract failed test names
+      - name: Extract failed test details
         if: always()
         run: |
-          # Cypress output format untuk failed tests:
-          #   1) Suite Name
+          # Ambil Cypress Cloud run URL dari output
+          # Cypress print: "Recorded Run: https://cloud.cypress.io/projects/xxx/runs/104"
+          CYPRESS_RUN_URL=$(grep -oE 'https://cloud\.cypress\.io/projects/[^[:space:]]+/runs/[0-9]+' cypress-output.txt | head -1)
+          echo "=== CYPRESS RUN URL: $CYPRESS_RUN_URL ==="
+
+          # Build test-results URL
+          TEST_RESULTS_URL="${CYPRESS_RUN_URL}/test-results?actions=%5B%5D&browsers=%5B%5D&groups=%5B%5D&isFlaky=%5B%5D&modificationDateRange=%7B%22startDate%22%3A%221970-01-01%22%2C%22endDate%22%3A%222038-01-19%22%7D&orderBy=EXECUTION_ORDER&oses=%5B%5D&specs=%5B%5D&statuses=%5B%5D&testingTypesEnum=%5B%5D"
+
+          # Fallback jika URL tidak ditemukan
+          if [ -z "$CYPRESS_RUN_URL" ]; then
+            TEST_RESULTS_URL="https://cloud.cypress.io/projects/wipkva/runs"
+          fi
+
+          echo "CYPRESS_RUN_URL=$CYPRESS_RUN_URL"   >> $GITHUB_ENV
+          echo "TEST_RESULTS_URL=$TEST_RESULTS_URL" >> $GITHUB_ENV
+
+          # Ambil failed specs dari tabel (baris dengan ✖)
+          # Format: "│ ✖  TC01-Dashboard.cy.js  ..."
+          FAILED_SPECS=$(grep -E "│\s+✖" cypress-output.txt             | grep -oE "[A-Za-z0-9_-]+\.cy\.js"             | sed "s/\.cy\.js$//"             | sort -u)
+          echo "=== FAILED SPECS: $FAILED_SPECS ==="
+
+          # Parse describe + test title dari section failing
+          # Format Cypress:
+          #   1) Describe Name
           #        test title
-          FAILED_LIST=$(awk '
-            /^[[:space:]]+[0-9]+\)/ { capture=1; next }
-            capture==1 && /^[[:space:]]+[^[:space:]]/ {
-              line=$0
-              gsub(/^[[:space:]]+/, "", line)
-              gsub(/:$/, "", line)
-              print "• " line
-              capture=0
+          FAILED_TESTS_PARSED=$(awk '
+            /^[[:space:]]+[0-9]+\)/ { in_block=1; describe_line=""; test_line=""; next }
+            in_block==1 && /^[[:space:]]+[A-Za-z]/ && describe_line=="" {
+              line=$0; gsub(/^[[:space:]]+/, "", line); describe_line=line; next
             }
-            /^[[:space:]]*$/ { capture=0 }
-          ' cypress-output.txt | sort -u | head -20)
+            in_block==1 && /^[[:space:]]+[A-Za-z]/ && describe_line!="" && test_line=="" {
+              line=$0; gsub(/^[[:space:]]+/, "", line); gsub(/:$/, "", line)
+              test_line=line; print describe_line "|" test_line; in_block=0
+            }
+            /^[[:space:]]*$/ && in_block==1 { in_block=0 }
+          ' cypress-output.txt)
 
-          echo "=== FAILED LIST DEBUG ==="
-          echo "$FAILED_LIST"
+          echo "=== FAILED TESTS PARSED ==="
+          echo "$FAILED_TESTS_PARSED"
 
-          echo "FAILED_TEST_DETAILS<<EOF" >> $GITHUB_ENV
-          echo "$FAILED_LIST"             >> $GITHUB_ENV
+          echo "FAILED_SPECS<<EOF"         >> $GITHUB_ENV
+          echo "$FAILED_SPECS"             >> $GITHUB_ENV
+          echo "EOF"                       >> $GITHUB_ENV
+
+          echo "FAILED_TESTS_PARSED<<EOF" >> $GITHUB_ENV
+          echo "$FAILED_TESTS_PARSED"     >> $GITHUB_ENV
           echo "EOF"                      >> $GITHUB_ENV
 
       # ============================================================
-      # DISCORD NOTIFICATION — format mirip Katalon
+      # DISCORD NOTIFICATION
       # ============================================================
       - name: Send Discord Notification
         if: always()
         run: |
-          EXEC_TIME=$(TZ='Asia/Jakarta' date "+%Y-%m-%d %I:%M:%S %p")
+          DATE_RUN=$(TZ='Asia/Jakarta' date "+%Y-%m-%d %H:%M:%S WIB")
 
           TOTAL=${TOTAL_TESTS:-0}
           PASSED=${PASSED_TESTS:-0}
           FAILED=${FAILED_TESTS:-0}
+          PENDING=${PENDING_TESTS:-0}
 
           if [ "$FAILED" != "0" ]; then
             STATUS_TEXT="has failed"
@@ -218,58 +233,65 @@ jobs:
             BRANCH_INFO="${{ github.ref_name }}"
           fi
 
-          RUN_URL="https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}"
           CLOUD_URL="https://cloud.cypress.io/projects/wipkva/runs"
-          ARTIFACT_URL="${RUN_URL}#artifacts"
+          # Gunakan run URL spesifik jika ada
+          if [ -n "$CYPRESS_RUN_URL" ]; then
+            DISPLAY_URL="$CYPRESS_RUN_URL"
+          else
+            DISPLAY_URL="$CLOUD_URL"
+          fi
+          RUN_URL="https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}"
           REPO="${{ github.repository }}"
           REPO_NAME="${REPO##*/}"
+          TS="${TS_NAME:-e2e}"
 
-          SUITE_NAME="${SUITE_LIST:-${{ github.ref_name }}}"
-
-          # Build body
-          DESC="Test Run [#${{ github.run_number }}]($RUN_URL) of the **${REPO_NAME}** ${STATUS_TEXT}."
-          LINE2="📦 ${SUITE_NAME}"
-          LINE3="🕐 ${EXEC_TIME} (${TEST_DURATION})"
-          LINE4="${RESULT_ICON} ${TOTAL} test results"
-
+          # Build failed section — tampilkan spec name saja, klik → test-results
+          FAILED_SECTION=""
           if [ "$FAILED" != "0" ]; then
-            if [ -n "$FAILED_TEST_DETAILS" ]; then
-              LINE5="${FAILED} test results failed
-          ${FAILED_TEST_DETAILS}"
-                      else
-                        LINE5="${FAILED} test results failed"
+            FAILED_SECTION="**${FAILED} test results failed**"
+
+            if [ -n "$FAILED_SPECS" ]; then
+              while IFS= read -r spec_name; do
+                [ -z "$spec_name" ] && continue
+                FAILED_SECTION="${FAILED_SECTION}
+          - [${spec_name}](${TEST_RESULTS_URL})"
+                        done <<< "$FAILED_SPECS"
                       fi
-                      BODY="${DESC}
+                    fi
 
-          ${LINE2}
-          ${LINE3}
-          ${LINE4}
+                    # Judul dan body
+                    TITLE="Automation Report Cypress"
+                    DESC="Test Run [#${{ github.run_number }}](${CLOUD_URL}) of the **${REPO_NAME}** ${STATUS_TEXT}."
 
-          ${LINE5}"
-                    else
-                      BODY="${DESC}
+          BODY="${DESC}
 
-          ${LINE2}
-          ${LINE3}
-          ${LINE4}"
+          📦 ${TS}
+          🗓 ${DATE_RUN}
+          ⏱ Duration : ${TEST_DURATION}
+          ${RESULT_ICON} Test results : ${TOTAL} test results
+          ✅ Passed : ${PASSED}
+          ❌ Failed : ${FAILED}"
+
+          if [ -n "$FAILED_SECTION" ]; then
+            BODY="${BODY}
+
+          ${FAILED_SECTION}"
                     fi
 
                     FOOTER="${REPO} | ${BRANCH_INFO} | ${TRIGGER_LABEL}"
 
                     jq -n \
-                      --arg body        "$BODY" \
-                      --arg footer      "$FOOTER" \
-                      --arg cloudUrl    "$CLOUD_URL" \
-                      --arg artifactUrl "$ARTIFACT_URL" \
-                      --argjson color   $COLOR \
+                      --arg title  "$TITLE" \
+                      --arg body   "$BODY" \
+                      --arg footer "$FOOTER" \
+                      --arg url    "$DISPLAY_URL" \
+                      --argjson color $COLOR \
                     '{
                       embeds: [{
+                        title: $title,
+                        url: $url,
                         description: $body,
                         color: $color,
-                        fields: [
-                          { name: "☁️ Cypress Cloud", value: ("[Open Dashboard →](" + $cloudUrl + ")"),       inline: true },
-                          { name: "📦 Allure Report", value: ("[Download Artifact →](" + $artifactUrl + ")"), inline: true }
-                        ],
                         footer: { text: $footer },
                         timestamp: (now | todateiso8601)
                       }]
