@@ -90,10 +90,33 @@ jobs:
           MINUTES=$((DURATION_SEC / 60))
           SECONDS=$((DURATION_SEC % 60))
 
-          # Jumlahkan passing/failing/pending dari SEMUA spec (bukan tail -1)
-          PASSING=$(grep -E '^\s+[0-9]+ passing' cypress-output.txt | grep -oE '[0-9]+' | awk '{s+=$1} END {print s+0}')
-          FAILING=$(grep -E '^\s+[0-9]+ failing' cypress-output.txt | grep -oE '[0-9]+' | awk '{s+=$1} END {print s+0}')
-          PENDING=$(grep -E '^\s+[0-9]+ pending' cypress-output.txt | grep -oE '[0-9]+' | awk '{s+=$1} END {print s+0}')
+          # Ambil grand total dari section "Results:" di bagian akhir output Cypress
+          # Cypress sudah hitung total — kita tinggal ambil dari sana
+          IN_RESULTS=0
+          PASSING=0; FAILING=0; PENDING=0
+          while IFS= read -r line; do
+            if echo "$line" | grep -qE '^\s+Tests:\s+[0-9]+'; then
+              IN_RESULTS=1
+            fi
+            if [ "$IN_RESULTS" = "1" ]; then
+              if echo "$line" | grep -qE '^\s+Passing:'; then
+                PASSING=$(echo "$line" | grep -oE '[0-9]+' | head -1)
+              fi
+              if echo "$line" | grep -qE '^\s+Failing:'; then
+                FAILING=$(echo "$line" | grep -oE '[0-9]+' | head -1)
+              fi
+              if echo "$line" | grep -qE '^\s+Pending:'; then
+                PENDING=$(echo "$line" | grep -oE '[0-9]+' | head -1)
+              fi
+            fi
+          done < cypress-output.txt
+
+          # Fallback: kalau Results block tidak ada, ambil baris terakhir passing/failing
+          if [ "${PASSING:-0}" = "0" ] && [ "${FAILING:-0}" = "0" ]; then
+            PASSING=$(grep -E '^\s+[0-9]+ passing' cypress-output.txt | tail -1 | grep -oE '[0-9]+' | head -1)
+            FAILING=$(grep -E '^\s+[0-9]+ failing' cypress-output.txt | tail -1 | grep -oE '[0-9]+' | head -1)
+            PENDING=$(grep -E '^\s+[0-9]+ pending' cypress-output.txt | tail -1 | grep -oE '[0-9]+' | head -1)
+          fi
 
           PASSING=${PASSING:-0}
           FAILING=${FAILING:-0}
