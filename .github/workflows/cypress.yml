@@ -45,7 +45,7 @@ jobs:
         run: npm ci
 
       # ============================================================
-      # RUN CYPRESS
+      # RUN CYPRESS — tee output ke file untuk parsing
       # ============================================================
       - name: Run Cypress Tests
         continue-on-error: true
@@ -57,8 +57,7 @@ jobs:
 
       - name: Strip ANSI color codes
         if: always()
-        run: |
-          sed 's/\x1B\[[0-9;]*[mKHF]//g' cypress-raw.txt > cypress-output.txt
+        run: sed 's/\x1B\[[0-9;]*[mKHF]//g' cypress-raw.txt > cypress-output.txt
 
       # ============================================================
       # ALLURE
@@ -91,10 +90,10 @@ jobs:
           MINUTES=$((DURATION_SEC / 60))
           SECONDS=$((DURATION_SEC % 60))
 
-          # Stats dari cypress terminal output
-          PASSING=$(grep -E '^\s+[0-9]+ passing' cypress-output.txt | tail -1 | grep -oE '[0-9]+' | head -1)
-          FAILING=$(grep -E '^\s+[0-9]+ failing' cypress-output.txt | tail -1 | grep -oE '[0-9]+' | head -1)
-          PENDING=$(grep -E '^\s+[0-9]+ pending' cypress-output.txt | tail -1 | grep -oE '[0-9]+' | head -1)
+          # Jumlahkan passing/failing/pending dari SEMUA spec (bukan tail -1)
+          PASSING=$(grep -E '^\s+[0-9]+ passing' cypress-output.txt | grep -oE '[0-9]+' | awk '{s+=$1} END {print s+0}')
+          FAILING=$(grep -E '^\s+[0-9]+ failing' cypress-output.txt | grep -oE '[0-9]+' | awk '{s+=$1} END {print s+0}')
+          PENDING=$(grep -E '^\s+[0-9]+ pending' cypress-output.txt | grep -oE '[0-9]+' | awk '{s+=$1} END {print s+0}')
 
           PASSING=${PASSING:-0}
           FAILING=${FAILING:-0}
@@ -107,9 +106,12 @@ jobs:
             PASS_RATE="0"
           fi
 
-          # Nama spec files yang dijalankan (untuk suite name)
-          SUITE_LIST=$(grep -oE 'Running:\s+\S+' cypress-output.txt \
-            | sed 's/Running:\s*//' \
+          # Suite name: nama file spec tanpa path dan .cy.js
+          SUITE_LIST=$(grep -oE 'Running:  [^ ]+' cypress-output.txt \
+            | sed 's/Running:  //' \
+            | sed 's|.*/||' \
+            | sed 's/\.cy\.js$//' \
+            | sort -u \
             | tr '\n' ', ' \
             | sed 's/, $//')
 
@@ -121,21 +123,18 @@ jobs:
           echo "PASS_RATE=${PASS_RATE}%"               >> $GITHUB_ENV
           echo "SUITE_LIST=$SUITE_LIST"                >> $GITHUB_ENV
 
-          echo "Total=$TOTAL | Passed=$PASSING | Failed=$FAILING | Duration=${MINUTES}m ${SECONDS}s"
+          echo "=== SUMMARY ==="
+          echo "Total=$TOTAL | Passed=$PASSING | Failed=$FAILING | Pending=$PENDING | Duration=${MINUTES}m ${SECONDS}s"
+          echo "Suite: $SUITE_LIST"
 
       - name: Extract failed test names
         if: always()
         run: |
-          # Parse failed test names dari section "failing" di output Cypress
-          # Format Cypress:
-          #   1) Suite Title
-          #        test title:
+          # Cypress output format untuk failed tests:
+          #   1) Suite Name
+          #        test title
           FAILED_LIST=$(awk '
-            /^[[:space:]]+[0-9]+\)/ {
-              capture=1
-              suite=""
-              next
-            }
+            /^[[:space:]]+[0-9]+\)/ { capture=1; next }
             capture==1 && /^[[:space:]]+[^[:space:]]/ {
               line=$0
               gsub(/^[[:space:]]+/, "", line)
@@ -160,7 +159,6 @@ jobs:
         if: always()
         run: |
           EXEC_TIME=$(TZ='Asia/Jakarta' date "+%Y-%m-%d %I:%M:%S %p")
-          DURATION_LABEL="${TEST_DURATION}"
 
           TOTAL=${TOTAL_TESTS:-0}
           PASSED=${PASSED_TESTS:-0}
@@ -170,15 +168,12 @@ jobs:
             STATUS_TEXT="has failed"
             RESULT_ICON="❌"
             COLOR=15158332
-            RESULT_LABEL="$FAILED test results failed"
           else
             STATUS_TEXT="has passed"
             RESULT_ICON="✅"
             COLOR=3066993
-            RESULT_LABEL="$TOTAL test results passed"
           fi
 
-          # Trigger label
           case "$TRIGGER" in
             schedule)          TRIGGER_LABEL="Scheduled"    ;;
             push)              TRIGGER_LABEL="Push to main" ;;
@@ -187,7 +182,6 @@ jobs:
             *)                 TRIGGER_LABEL="$TRIGGER"     ;;
           esac
 
-          # Branch / PR info
           if [ "$TRIGGER" = "pull_request" ]; then
             BRANCH_INFO="PR #${{ github.event.pull_request.number }} (${{ github.head_ref }})"
           else
@@ -197,60 +191,60 @@ jobs:
           RUN_URL="https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}"
           CLOUD_URL="https://cloud.cypress.io/projects/wipkva/runs"
           ARTIFACT_URL="${RUN_URL}#artifacts"
-
-          # Suite name — pakai spec list atau fallback ke branch
-          if [ -n "$SUITE_LIST" ]; then
-            SUITE_NAME="$SUITE_LIST"
-          else
-            SUITE_NAME="${{ github.ref_name }}"
-          fi
-
-          # Failed test list sebagai string
-          if [ "$FAILED" != "0" ] && [ -n "$FAILED_TEST_DETAILS" ]; then
-            FAILED_BLOCK="$FAILED test results failed\n$FAILED_TEST_DETAILS"
-          elif [ "$FAILED" != "0" ]; then
-            FAILED_BLOCK="$FAILED test results failed\n• (lihat Cypress Cloud untuk detail)"
-          else
-            FAILED_BLOCK=""
-          fi
-
-          # Build description mirip Katalon
           REPO="${{ github.repository }}"
-          DESC="Test Run [#${{ github.run_number }}]($RUN_URL) of the **${REPO##*/}** ${STATUS_TEXT}."
+          REPO_NAME="${REPO##*/}"
 
-          BODY="$(printf '%s\n\n📦 %s\n🕐 %s (%s)\n%s %s test results' \
-            "$DESC" \
-            "$SUITE_NAME" \
-            "$EXEC_TIME" \
-            "$DURATION_LABEL" \
-            "$RESULT_ICON" \
-            "$TOTAL")"
+          SUITE_NAME="${SUITE_LIST:-${{ github.ref_name }}}"
 
-          if [ -n "$FAILED_BLOCK" ]; then
-            BODY="$(printf '%s\n\n%b' "$BODY" "$FAILED_BLOCK")"
-          fi
+          # Build body
+          DESC="Test Run [#${{ github.run_number }}]($RUN_URL) of the **${REPO_NAME}** ${STATUS_TEXT}."
+          LINE2="📦 ${SUITE_NAME}"
+          LINE3="🕐 ${EXEC_TIME} (${TEST_DURATION})"
+          LINE4="${RESULT_ICON} ${TOTAL} test results"
 
-          FOOTER="${REPO} | ${BRANCH_INFO} | ${TRIGGER_LABEL}"
+          if [ "$FAILED" != "0" ]; then
+            if [ -n "$FAILED_TEST_DETAILS" ]; then
+              LINE5="${FAILED} test results failed
+            ${FAILED_TEST_DETAILS}"
+                        else
+                          LINE5="${FAILED} test results failed"
+                        fi
+                        BODY="${DESC}
 
-          jq -n \
-            --arg body   "$BODY" \
-            --arg footer "$FOOTER" \
-            --arg cloudUrl "$CLOUD_URL" \
-            --arg artifactUrl "$ARTIFACT_URL" \
-            --argjson color $COLOR \
-          '{
-            embeds: [{
-              description: $body,
-              color: $color,
-              fields: [
-                { name: "☁️ Cypress Cloud", value: ("[Open Dashboard →](" + $cloudUrl + ")"),      inline: true },
-                { name: "📦 Allure Report", value: ("[Download Artifact →](" + $artifactUrl + ")"), inline: true }
-              ],
-              footer: { text: $footer },
-              timestamp: (now | todateiso8601)
-            }]
-          }' \
-          | curl -s -H "Content-Type: application/json" \
-              -X POST \
-              -d @- \
-              ${{ secrets.DISCORD_WEBHOOK }}
+            ${LINE2}
+            ${LINE3}
+            ${LINE4}
+
+            ${LINE5}"
+                      else
+                        BODY="${DESC}
+
+            ${LINE2}
+            ${LINE3}
+            ${LINE4}"
+                      fi
+
+                      FOOTER="${REPO} | ${BRANCH_INFO} | ${TRIGGER_LABEL}"
+
+                      jq -n \
+                        --arg body        "$BODY" \
+                        --arg footer      "$FOOTER" \
+                        --arg cloudUrl    "$CLOUD_URL" \
+                        --arg artifactUrl "$ARTIFACT_URL" \
+                        --argjson color   $COLOR \
+                      '{
+                        embeds: [{
+                          description: $body,
+                          color: $color,
+                          fields: [
+                            { name: "☁️ Cypress Cloud", value: ("[Open Dashboard →](" + $cloudUrl + ")"),       inline: true },
+                            { name: "📦 Allure Report", value: ("[Download Artifact →](" + $artifactUrl + ")"), inline: true }
+                          ],
+                          footer: { text: $footer },
+                          timestamp: (now | todateiso8601)
+                        }]
+                      }' \
+                      | curl -s -H "Content-Type: application/json" \
+                          -X POST \
+                          -d @- \
+                          ${{ secrets.DISCORD_WEBHOOK }}
