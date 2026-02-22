@@ -238,69 +238,69 @@ jobs:
           fi
 
           CLOUD_URL="https://cloud.cypress.io/projects/wipkva/runs"
-          # Gunakan run URL spesifik jika ada
           if [ -n "$CYPRESS_RUN_URL" ]; then
             DISPLAY_URL="$CYPRESS_RUN_URL"
           else
             DISPLAY_URL="$CLOUD_URL"
           fi
-          RUN_URL="https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}"
           REPO="${{ github.repository }}"
           REPO_NAME="${REPO##*/}"
-          TS="${TS_NAME:-e2e}"
 
-          # Build failed section — tampilkan spec name saja, klik → test-results
+          # Suite: jika ada failed → TS dari spec failed saja
+          #        jika semua passed → semua TS yang dijalankan
+          if [ "$FAILED" != "0" ] && [ -n "$FAILED_SPECS" ]; then
+            SUITE_DISPLAY=$(echo "$FAILED_SPECS"               | sed 's|/[^/]*$||'               | sort -u               | sed 's/^/• /')
+          else
+            SUITE_DISPLAY="$TS_NAME"
+          fi
+
+          # Failed section
           FAILED_SECTION=""
           if [ "$FAILED" != "0" ]; then
             FAILED_SECTION="**${FAILED} test results failed**"
-
             if [ -n "$FAILED_SPECS" ]; then
               while IFS= read -r spec_name; do
                 [ -z "$spec_name" ] && continue
                 FAILED_SECTION="${FAILED_SECTION}
-          - [${spec_name}](${TEST_RESULTS_URL})"
+          • [${spec_name}](${TEST_RESULTS_URL})"
                         done <<< "$FAILED_SPECS"
                       fi
                     fi
 
-          # Judul dan body
+          # Build body
           TITLE="Automation Report Cypress"
-          DESC="Test Run [#${{ github.run_number }}](${CLOUD_URL}) of the **${REPO_NAME}** ${STATUS_TEXT}."
+          DESC="Test Run [#${{ github.run_number }}](${DISPLAY_URL}) of the **${REPO_NAME}** ${STATUS_TEXT}."
 
           BODY="${DESC}
 
-          📦 ${TS}
-          🗓 ${DATE_RUN}
-          ⏱ Duration : ${TEST_DURATION}
-          ${RESULT_ICON} Test results : ${TOTAL} test results
-          ✅ Passed : ${PASSED}
-          ❌ Failed : ${FAILED}"
+          **Test Suite**
+          ${SUITE_DISPLAY}
+
+          **Execution**
+          🗓  ${DATE_RUN}
+          ⏱  ${TEST_DURATION}
+
+          **Results**
+          📋  Total   : ${TOTAL}
+          ✅  Passed  : ${PASSED}
+          ❌  Failed  : ${FAILED}"
 
           if [ -n "$FAILED_SECTION" ]; then
             BODY="${BODY}
 
+          ─────────────────
           ${FAILED_SECTION}"
                     fi
 
-          FOOTER="${REPO} | ${BRANCH_INFO} | ${TRIGGER_LABEL}"
+                    FOOTER="${REPO} | ${BRANCH_INFO} | ${TRIGGER_LABEL}"
 
-          jq -n \
-            --arg title  "$TITLE" \
-            --arg body   "$BODY" \
-            --arg footer "$FOOTER" \
-            --arg url    "$DISPLAY_URL" \
-            --argjson color $COLOR \
-          '{
-            embeds: [{
-              title: $title,
-              url: $url,
-              description: $body,
-              color: $color,
-              footer: { text: $footer },
-              timestamp: (now | todateiso8601)
-            }]
-          }' \
-          | curl -s -H "Content-Type: application/json" \
-              -X POST \
-              -d @- \
-              ${{ secrets.DISCORD_WEBHOOK }}
+                    jq -n             --arg title  "$TITLE"             --arg body   "$BODY"             --arg footer "$FOOTER"             --arg url    "$DISPLAY_URL"             --argjson color $COLOR           '{
+                      embeds: [{
+                                title: $title,
+                                url: $url,
+                                description: $body,
+                                color: $color,
+                                footer: { text: $footer },
+                                timestamp: (now | todateiso8601)
+                              }]
+                              }'| curl -s -H "Content-Type: application/json"               -X POST               -d @-               ${{ secrets.DISCORD_WEBHOOK }}
