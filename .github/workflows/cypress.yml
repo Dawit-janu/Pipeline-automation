@@ -90,25 +90,39 @@ jobs:
           MINUTES=$((DURATION_SEC / 60))
           SECONDS=$((DURATION_SEC % 60))
 
-          # Format output Cypress adalah TABEL, baris summary ada di baris terakhir:
-          # "✔  All specs passed!    00:09    3    3    -    -    -"
-          # atau
-          # "✖  N of N failed (...)  00:09    3    2    1    -    -"
-          # Kolom: Duration, Tests, Passing, Failing, Pending, Skipped
+          # Baris summary Cypress (baris terakhir tabel):
+          # "✔  All specs passed!         00:09    3    3    -    -    -"
+          # "✖  1 of 3 failed (33%)       00:11    3    2    1    -    -"
+          # Kolom (dari kanan): Skipped, Pending, Failing, Passing, Tests, Duration
+          # Kita ambil 5 kolom terakhir (Tests Passing Failing Pending Skipped)
 
           SUMMARY_LINE=$(grep -E '(All specs passed|of [0-9]+ failed)' cypress-output.txt | tail -1)
           echo "=== SUMMARY LINE: $SUMMARY_LINE ==="
 
           if [ -n "$SUMMARY_LINE" ]; then
-            # Ambil semua angka dari baris summary (skip durasi format MM:SS)
-            # Angka yang kita mau: Tests Passing Failing Pending Skipped
-            NUMBERS=$(echo "$SUMMARY_LINE" | grep -oE '[0-9]+' | grep -v '^0[0-9]$' | paste -sd ' ')
-            echo "=== NUMBERS: $NUMBERS ==="
+            # Hapus karakter unicode checkmark/cross dan teks di depan
+            # Ambil 5 angka/dash terakhir dari baris (kolom tabel dari kanan)
+            # Format: ... 00:XX   TESTS  PASSING  FAILING  PENDING  SKIPPED
+            # Pakai awk: ambil field dari belakang
+            CLEAN=$(echo "$SUMMARY_LINE" | sed 's/[^0-9 	-]//g' | tr -s ' 	' ' ' | sed 's/^ //')
+            echo "=== CLEAN: $CLEAN ==="
 
-            TOTAL=$(echo $NUMBERS   | awk '{print $1}')
-            PASSING=$(echo $NUMBERS | awk '{print $2}')
-            FAILING=$(echo $NUMBERS | awk '{print $3}')
-            PENDING=$(echo $NUMBERS | awk '{print $4}')
+            # Hitung jumlah field
+            FIELD_COUNT=$(echo "$CLEAN" | awk '{print NF}')
+            echo "=== FIELD COUNT: $FIELD_COUNT ==="
+
+            # 5 field terakhir = Tests Passing Failing Pending Skipped
+            # Field sebelumnya adalah durasi (format sudah jadi angka biasa setelah sed)
+            TOTAL=$(echo "$CLEAN"   | awk -v n=$FIELD_COUNT '{print $(n-4)}')
+            PASSING=$(echo "$CLEAN" | awk -v n=$FIELD_COUNT '{print $(n-3)}')
+            FAILING=$(echo "$CLEAN" | awk -v n=$FIELD_COUNT '{print $(n-2)}')
+            PENDING=$(echo "$CLEAN" | awk -v n=$FIELD_COUNT '{print $(n-1)}')
+
+            # Ganti "-" dengan 0
+            TOTAL=$(echo "${TOTAL:-0}"   | sed 's/-/0/')
+            PASSING=$(echo "${PASSING:-0}" | sed 's/-/0/')
+            FAILING=$(echo "${FAILING:-0}" | sed 's/-/0/')
+            PENDING=$(echo "${PENDING:-0}" | sed 's/-/0/')
           fi
 
           PASSING=${PASSING:-0}
