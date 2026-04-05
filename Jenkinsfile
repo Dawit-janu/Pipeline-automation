@@ -10,13 +10,13 @@ pipeline {
         stage('Install') {
             steps {
                 echo 'Installing dependencies...'
-                bat 'npm install'
+                bat 'npm ci'
             }
         }
         stage('Test') {
             steps {
                 echo 'Running Cypress tests...'
-                bat 'npx cypress run'
+                bat 'npx cypress run --headless'
             }
         }
     }
