@@ -34,10 +34,8 @@ jobs:
       - name: Record Start Time
         run: date +%s > start_time.txt
 
-      - name: Detect trigger & start time
-        run: |
-          echo "TRIGGER=${{ github.event_name }}" >> $GITHUB_ENV
-          echo "JOB_START_TIME=$(date +%s)"       >> $GITHUB_ENV
+      - name: Detect trigger
+        run: echo "TRIGGER=${{ github.event_name }}" >> $GITHUB_ENV
 
       - name: Install dependencies
         run: sudo apt-get update && sudo apt-get install -y jq bc
@@ -49,7 +47,6 @@ jobs:
 
       - name: Install project dependencies
         run: npm ci
-
       # ============================================================
       # RUN CYPRESS
       # ============================================================
@@ -84,6 +81,7 @@ jobs:
           name: allure-report
           path: allure-report/
           retention-days: 30
+          
       # 2. Upload text output utk Job selanjutnya (untuk parse statistik)
       - name: Upload Output Artifact
         if: always()
@@ -99,7 +97,8 @@ jobs:
         if: always()
         run: |
           if [ -f start_time.txt ]; then
-            START =$(cat start_time.txt)
+            # PERBAIKAN: Hapus spasi di sini (SEHARUSNYA TIDAK ADA SPASI SETELAH START)
+            START=$(cat start_time.txt)
             END=$(date +%s)
             DURATION=$((END - START))
             MINUTES=$((DURATION / 60))
@@ -108,6 +107,7 @@ jobs:
           else
             echo "0m 0s" > duration.txt
           fi
+
       - name: Upload Duration Artifact
         if: always()
         uses: actions/upload-artifact@v4
@@ -115,13 +115,6 @@ jobs:
           name: duration-artifact
           path: duration.txt
           retention-days: 1
-
-      # Tambahkan step ini setelah 'Checkout repo'
-      - name: Download Duration Artifact
-        uses: actions/download-artifact@v4
-        with:
-          name: duration-artifact
-          path: ./
       # ============================================================
       # JOB 2: DEPLOY & DISCORD
     # ============================================================
@@ -148,6 +141,13 @@ jobs:
         with:
           name: cypress-output
           path: ./
+
+      # Download duration dari Job 1 (POSISI YANG BENAR)
+      - name: Download Duration Artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: duration-artifact
+          path: ./
       # ============================================================
       # DEPLOY KE GITHUB PAGES
       # ============================================================
@@ -164,7 +164,7 @@ jobs:
       - name: Extract test summary
         if: always()  
         run: |
-          # Parsing logic sama persis dengan yang Anda punya
+          # Parsing logic sama persis
           SUMMARY_LINE=$(grep -E '(All specs passed|of [0-9]+ failed)' cypress-output.txt | tail -1)
           if [ -n "$SUMMARY_LINE" ]; then
             CLEAN=$(echo "$SUMMARY_LINE" | sed 's/[^0-9 \t-]//g' | tr -s ' \t' ' ' | sed 's/^ //')
@@ -190,12 +190,20 @@ jobs:
           TS_NAME=$(grep -E "│\s+[✔✖]" cypress-output.txt | grep -oE "[A-Za-z0-9_-]+/[A-Za-z0-9_/-]+\.cy\.js" | sed 's|/[^/]*$||' | sort -u | sed 's/^/• /')
           TS_NAME=${TS_NAME:-"• e2e"}
 
-          # Simpan ke ENV untuk step Discord
+          # BACA DURASI DARI FILE
+          if [ -f duration.txt ]; then
+            TEST_DURATION=$(cat duration.txt)
+          else
+            TEST_DURATION="N/A"
+          fi
+
+          # Simpan ke ENV
           echo "TOTAL_TESTS=$TOTAL" >> $GITHUB_ENV
           echo "PASSED_TESTS=$PASSING" >> $GITHUB_ENV
           echo "FAILED_TESTS=$FAILING" >> $GITHUB_ENV
           echo "PENDING_TESTS=$PENDING" >> $GITHUB_ENV
           echo "PASS_RATE=${PASS_RATE}%" >> $GITHUB_ENV
+          echo "TEST_DURATION=$TEST_DURATION" >> $GITHUB_ENV
           echo "TS_NAME<<EOF" >> $GITHUB_ENV
           echo "$TS_NAME" >> $GITHUB_ENV
           echo "EOF" >> $GITHUB_ENV
@@ -203,7 +211,6 @@ jobs:
       - name: Extract failed test details
         if: always()
         run: |
-          # Logic parsing failed test sama dengan script Anda
           FAILED_SPECS=$(grep -E "│\s+✖" cypress-output.txt | grep -oE "[A-Za-z0-9_/-]+\.cy\.js" | sed "s/\.cy\.js$//" | sort -u)
           FAILED_TESTS_PARSED=$(awk '
             /^[[:space:]]+[0-9]+\)/ { in_block=1; describe_line=""; test_line=""; next }
@@ -225,17 +232,6 @@ jobs:
           echo "$FAILED_TESTS_PARSED" >> $GITHUB_ENV
           echo "EOF" >> $GITHUB_ENV
 
-          # ==========================================
-          # TAMBAHKAN INI DI AKHIR (sebelum echo selesai)
-          # ==========================================
-          if [ -f duration.txt ]; then
-            TEST_DURATION=$(cat duration.txt)
-          else
-            TEST_DURATION="N/A"
-          fi
-          echo "TEST_DURATION=$TEST_DURATION" >> $GITHUB_ENV
-          # ==========================================
-
       # ============================================================
       # DISCORD NOTIFICATION
       # ============================================================
@@ -249,7 +245,6 @@ jobs:
           FAILED=${FAILED_TESTS:-0}
           PENDING=${PENDING_TESTS:-0}
 
-          # Tentukan Status
           if [ "$FAILED" != "0" ]; then
             STATUS_TEXT="has failed"
             RESULT_ICON="❌"
@@ -260,7 +255,6 @@ jobs:
             COLOR=3066993
           fi
 
-          # Tentukan Trigger Info
           case "${{ github.event_name }}" in
             schedule)          TRIGGER_LABEL="Scheduled"    ;;
             push)              TRIGGER_LABEL="Push to main" ;;
@@ -275,12 +269,8 @@ jobs:
             BRANCH_INFO="${{ github.ref_name }}"
           fi
 
-          # ========================================
-          # PERUBAHAN UTAMA DI SINI: LINK GITHUB PAGES
-          # ========================================
           REPO="${{ github.repository }}"
           REPO_NAME="${REPO##*/}"
-          # URL Report Allure di GitHub Pages
           ALLURE_URL="https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}/"
 
           if [ "$FAILED" != "0" ] && [ -n "$FAILED_SPECS" ]; then
@@ -292,7 +282,6 @@ jobs:
           FAILED_SECTION=""
           if [ "$FAILED" != "0" ]; then
             FAILED_SECTION="**${FAILED} test results failed**"
-            # Kita link langsung ke Allure URL, karena deep link ke test di Allure statis agak rumit
             if [ -n "$FAILED_SPECS" ]; then
               while IFS= read -r spec_name; do
                 [ -z "$spec_name" ] && continue
@@ -303,7 +292,6 @@ jobs:
                     fi
 
           TITLE="Automation Report Allure"
-          # Deskripsi mengarah ke ALLURE_URL
           DESC="Test Run [#${{ github.run_number }}](${ALLURE_URL}) of the **${REPO_NAME}** ${STATUS_TEXT}."
 
           BODY="${DESC}
@@ -339,5 +327,3 @@ jobs:
                                 timestamp: (now | todateiso8601)
                               }]
                               }'| curl -s -H "Content-Type: application/json"               -X POST               -d @-               ${{ secrets.DISCORD_WEBHOOK }}
-
-      
