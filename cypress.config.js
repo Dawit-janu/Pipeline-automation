@@ -4,17 +4,13 @@ const allureWriter = require("@shelex/cypress-allure-plugin/writer");
 module.exports = defineConfig({
 
   // ✅ Cypress Cloud Project ID
-  //projectId: "wipkva",
+  // projectId: "wipkva",
 
   e2e: {
     setupNodeEvents(on, config) {
       // ✅ Allure plugin — generate allure-results per test
       allureWriter(on, config);
       return config;
-    },
-    env: {
-      allure: true,              // ✅ Aktifkan Allure plugin
-      allureReuseAfterSpec: true, // ✅ Reuse allure-results untuk semua spec
     },
   },
 
