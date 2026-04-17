@@ -87,6 +87,13 @@ jobs:
           name: cypress-output
           path: cypress-output.txt
           retention-days: 1
+
+      # Tambahkan step ini setelah 'Checkout repo'
+      - name: Download Duration Artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: duration-artifact
+          path: ./
       # ============================================================
       # JOB 2: DEPLOY & DISCORD
     # ============================================================
@@ -127,7 +134,7 @@ jobs:
       # EXTRACT STATS
       # ============================================================
       - name: Extract test summary
-        if: always()
+        if: always()  
         run: |
           # Parsing logic sama persis dengan yang Anda punya
           SUMMARY_LINE=$(grep -E '(All specs passed|of [0-9]+ failed)' cypress-output.txt | tail -1)
@@ -189,6 +196,17 @@ jobs:
           echo "FAILED_TESTS_PARSED<<EOF" >> $GITHUB_ENV
           echo "$FAILED_TESTS_PARSED" >> $GITHUB_ENV
           echo "EOF" >> $GITHUB_ENV
+
+          # ==========================================
+          # TAMBAHKAN INI DI AKHIR (sebelum echo selesai)
+          # ==========================================
+          if [ -f duration.txt ]; then
+            TEST_DURATION=$(cat duration.txt)
+          else
+            TEST_DURATION="N/A"
+          fi
+          echo "TEST_DURATION=$TEST_DURATION" >> $GITHUB_ENV
+          # ==========================================
 
       # ============================================================
       # DISCORD NOTIFICATION
@@ -293,3 +311,26 @@ jobs:
                                 timestamp: (now | todateiso8601)
                               }]
                               }'| curl -s -H "Content-Type: application/json"               -X POST               -d @-               ${{ secrets.DISCORD_WEBHOOK }}
+
+      # ============================================================
+      # CALCULATE DURATION (JOB 1)
+      # ============================================================
+      - name: Calculate Test Duration
+        if: always()
+        run: |
+          JOB_END_TIME=$(date +%s)
+          # Ambil start time dari env (jika 0 berarti error), hitung selisih
+          START=${JOB_START_TIME:-0}
+          DURATION_SEC=$(( JOB_END_TIME - START ))
+          MINUTES=$((DURATION_SEC / 60))
+          SECONDS=$((DURATION_SEC % 60))
+          # Simpan hasil ke file duration.txt
+          echo "${MINUTES}m ${SECONDS}s" > duration.txt
+
+      - name: Upload Duration Artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: duration-artifact
+          path: duration.txt
+          retention-days: 1
