@@ -12,6 +12,10 @@ module.exports = defineConfig({
       allureWriter(on, config);
       return config;
     },
+    env: {
+      allure: true,              // ✅ Aktifkan Allure plugin
+      allureReuseAfterSpec: true, // ✅ Reuse allure-results untuk semua spec
+    },
   },
 
   video: true,                    // ✅ Video direkam → tersimpan di Cypress Cloud

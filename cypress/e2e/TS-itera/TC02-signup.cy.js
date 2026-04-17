@@ -1,3 +1,6 @@
+import '@shelex/cypress-allure-plugin'
+
+
 describe('Signup Itera', () => {
 //Berhasil Signup Akun
   it('Signup Success', () => {
