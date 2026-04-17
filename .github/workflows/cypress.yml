@@ -20,6 +20,8 @@ on:
       - cron: '0 5 * * 1-6'
       #- cron: '*/5 * * * *'
 
+permissions:
+  contents: write # WAJIB agar bisa deploy ke GitHub Pages
 
 jobs:
   cypress-run:
@@ -28,6 +30,9 @@ jobs:
     steps:
       - name: Checkout repo
         uses: actions/checkout@v4
+      
+      - name: Record Start Time
+        run: date +%s > start_time.txt
 
       - name: Detect trigger & start time
         run: |
@@ -86,6 +91,29 @@ jobs:
         with:
           name: cypress-output
           path: cypress-output.txt
+          retention-days: 1
+      # ============================================================
+      # 2. HITUNG & UPLOAD DURASI (BARU)
+      # ============================================================
+      - name: Calculate Test Duration
+        if: always()
+        run: |
+          if [ -f start_time.txt ]; then
+            START =$(cat start_time.txt)
+            END=$(date +%s)
+            DURATION=$((END - START))
+            MINUTES=$((DURATION / 60))
+            SECONDS=$((DURATION % 60))
+            echo "${MINUTES}m ${SECONDS}s" > duration.txt
+          else
+            echo "0m 0s" > duration.txt
+          fi
+      - name: Upload Duration Artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: duration-artifact
+          path: duration.txt
           retention-days: 1
 
       # Tambahkan step ini setelah 'Checkout repo'
@@ -312,25 +340,4 @@ jobs:
                               }]
                               }'| curl -s -H "Content-Type: application/json"               -X POST               -d @-               ${{ secrets.DISCORD_WEBHOOK }}
 
-      # ============================================================
-      # CALCULATE DURATION (JOB 1)
-      # ============================================================
-      - name: Calculate Test Duration
-        if: always()
-        run: |
-          JOB_END_TIME=$(date +%s)
-          # Ambil start time dari env (jika 0 berarti error), hitung selisih
-          START=${JOB_START_TIME:-0}
-          DURATION_SEC=$(( JOB_END_TIME - START ))
-          MINUTES=$((DURATION_SEC / 60))
-          SECONDS=$((DURATION_SEC % 60))
-          # Simpan hasil ke file duration.txt
-          echo "${MINUTES}m ${SECONDS}s" > duration.txt
-
-      - name: Upload Duration Artifact
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: duration-artifact
-          path: duration.txt
-          retention-days: 1
+      
