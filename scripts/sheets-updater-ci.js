@@ -16,7 +16,7 @@ function parseAllureResults() {
   }
 
   const files = fs.readdirSync(resultsDir);
-  const parser = new XMLParser({ ignoreAttributes: false, attributeNamePrefix: "" }); // Hapus @_ supaya mudah
+  const parser = new XMLParser({ ignoreAttributes: false, attributeNamePrefix: "" });
   const testCases = [];
 
   files.forEach(file => {
@@ -37,11 +37,9 @@ function parseAllureResults() {
             errorMessage = errorMessage.split('\n')[0]; 
         }
 
-        // --- EKSTRAKSI CERDAS LABEL ALLURE ---
-        // Label 'testClass' biasanya berisi: TC01-Coba.cy.js (Nama File)
-        // Label 'testMethod' biasanya berisi: Success Login (Nama It Block)
-        let testClass = "";
-        let testMethod = "";
+        // --- EKSTRAKSI LABEL ---
+        let testClass = "";  // Biasanya Nama File
+        let testMethod = ""; // Biasama Nama Test (It Block)
         let suiteName = "";
 
         if (tc.labels && tc.labels.label) {
@@ -53,22 +51,25 @@ function parseAllureResults() {
             });
         }
 
-        // Bersihkan TestID: Hapus .cy.js
+        // --- PERBAIKAN: BERSIHKAN NAMA FILE ---
+        // Input: TS-Coba/TC01-Coba.cy.js
+        // Output: TC01-Coba
         let testID = testClass.replace('.cy.js', '');
-        
-        // Bersihkan Title:
-        // Jika ada testMethod, pakai itu (paling akurat: "Success Login")
-        // Kalau tidak ada, ambil dari 'name' lalu hapus prefix 'suiteName' (misal: "Login Success Login" -> "Success Login")
-        let title = "";
-        if (testMethod) {
-            title = testMethod;
-        } else {
+        // Jika ada slash (/), ambil bagian belakangnya (filenya saja)
+        if (testID.includes('/')) {
+            testID = testID.split('/').pop();
+        }
+
+        // --- PERBAIKAN: BERSIHKAN TITLE ---
+        // Prioritaskan nama test (testMethod), jika tidak ada pakai nama umum
+        let title = testMethod;
+        if (!title) {
             title = name.replace(suiteName, '').trim();
         }
 
         testCases.push({
-            testID: testID,       // Untuk match ke kolom A (TestID)
-            title: title,         // Untuk match ke kolom B (Title)
+            testID: testID,       // Contoh: TC01-Coba
+            title: title,         // Contoh: Success Login
             status: status, 
             duration: duration,
             actual: errorMessage
@@ -82,13 +83,11 @@ function parseAllureResults() {
 // --- MAIN ---
 async function updateSheet() {
   try {
-    // 1. Parse Data
     const testResults = parseAllureResults();
     console.log(`\n📦 Parsing Allure: Ditemukan ${testResults.length} test case.`);
 
     if (testResults.length === 0) return;
 
-    // 2. Baca Data Sheet
     const auth = new google.auth.GoogleAuth({
       keyFile: CREDENTIALS_PATH,
       scopes: ['https://www.googleapis.com/auth/spreadsheets']
@@ -96,8 +95,6 @@ async function updateSheet() {
 
     const sheets = google.sheets({ version: 'v4', auth });
     
-    // Ambil data Sheet (Baris 2 sampai 1000)
-    // A=TestID (0), B=Title (1), E=Actual (4), F=Status (5), G=LastRun (6), H=Duration (7)
     const res = await sheets.spreadsheets.values.get({
       spreadsheetId: SPREADSHEET_ID,
       range: `${SHEET_NAME}!A2:H1000`,
@@ -113,19 +110,20 @@ async function updateSheet() {
     const dateNow = new Date().toISOString().split('T')[0]; 
     const timestamp = new Date().toLocaleTimeString('id-ID', { timeZone: 'Asia/Jakarta', hour12: false });
 
+    // Tampilkan beberapa ID dari GSheet untuk debugging
+    console.log(`🔍 Debug: GSheet Rows Found: ${rows.length}`);
+
     testResults.forEach(result => {
-      // --- MATCHING LOGIC ---
+      // --- LOGIC MATCHING (CASE INSENSITIVE) ---
       let rowIndex = -1;
       let matchType = "";
 
-      // 1. Cari kecocokan di KOLOM B (Title)
-      // Case insensitive: "Success Login" vs "success login"
+      // 1. Cari di Kolom B (Title)
       rowIndex = rows.findIndex(row => row[1] && row[1].trim().toLowerCase() === result.title.toLowerCase());
       if (rowIndex !== -1) {
         matchType = "Title";
       } else {
-        // 2. Cari kecocokan di KOLOM A (TestID)
-        // Case insensitive: "TC01-Coba" vs "tc01-coba"
+        // 2. Cari di Kolom A (TestID)
         rowIndex = rows.findIndex(row => row[0] && row[0].trim().toLowerCase() === result.testID.toLowerCase());
         if (rowIndex !== -1) {
           matchType = "TestID";
@@ -134,20 +132,18 @@ async function updateSheet() {
 
       if (rowIndex !== -1) {
         const rowNum = rowIndex + 2;
-        console.log(`✅ MATCH FOUND (${matchType}): [Row ${rowNum}] ID: ${result.testID} | Title: ${result.title}`);
+        console.log(`✅ MATCH FOUND (${matchType}): [Row ${rowNum}] ID=${result.testID} | Title=${result.title}`);
 
-        // Update Kolom: Actual (E), Status (F), LastRun (G), Duration (H)
         updates.push({
           range: `${SHEET_NAME}!E${rowNum}:H${rowNum}`,
           values: [[result.actual, result.status, `${dateNow} ${timestamp}`, result.duration]]
         });
       } else {
-        // Log Detail kalau tidak ketemu untuk memudahkan debugging
-        console.log(`❌ NOT FOUND: ID "${result.testID}" | Title "${result.title}"`);
+        console.log(`❌ NOT FOUND: ID="${result.testID}" | Title="${result.title}"`);
+        console.log(`   💡 Pastikan Kolom A (TestID) atau B (Title) di GSheet SAMA dengan nilai di atas.`);
       }
     });
 
-    // 3. Batch Update
     if (updates.length > 0) {
       await sheets.spreadsheets.values.batchUpdate({
         spreadsheetId: SPREADSHEET_ID,
@@ -158,8 +154,9 @@ async function updateSheet() {
       });
       console.log(`\n🚀 Berhasil update ${updates.length} baris di GSheet.`);
     } else {
-      console.log('\n⚠️ Tidak ada baris yang dicocokkan.');
-      console.log('💡 Cek lagi penulisan "TestID" dan "Title" di GSheet apakah sama persis (huruf besar/kecilnya).');
+      console.log('\n⚠️ Tidak ada update yang dilakukan (Nama test tidak cocok dengan GSheet).');
+      console.log('💡 Tips: Ganti nama file Cypress agar sama persis dengan TestID di GSheet.');
+      console.log('   Contoh: Jika TestID di GSheet "TC01", ganti nama file jadi "TC01.cy.js".');
     }
 
   } catch (error) {
