@@ -147,13 +147,13 @@ jobs:
       - name: Update Sheet
         run: node scripts/sheets-updater-ci.js
 
-  # ==========================================
+   # ==========================================
   # STAGE 4: NOTIFY (FAIL)
   # ==========================================
   notify-fail:
     name: Notify Discord (Fail)
     runs-on: ubuntu-latest
-    needs: update-gsheet # <--- KEY CHANGE: Menunggu GSheet update dulu
+    needs: update-gsheet
     # Hanya jalan jika job 'cypress-test' gagal
     if: needs.cypress-test.result == 'failure' 
 
@@ -176,39 +176,52 @@ jobs:
           name: duration-artifact
           path: ./
 
+      # --- SMART SCRIPT START ---
       - name: Extract Stats & Send Fail Notification
         env:
           DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK }}
         run: |
-          # --- PARSING LOGIC ---
+          # 1. Parsing Angka Total dan Fail
           SUMMARY_LINE=$(grep -E '(All specs passed|of [0-9]+ failed)' cypress-output.txt | tail -1)
-          if [ -n "$SUMMARY_LINE" ]; then
-            CLEAN=$(echo "$SUMMARY_LINE" | sed 's/[^0-9 \t-]//g' | tr -s ' \t' ' ' | sed 's/^ //')
-            FIELD_COUNT=$(echo "$CLEAN" | awk '{print NF}')
-            TOTAL=$(echo "$CLEAN"   | awk -v n=$FIELD_COUNT '{print $(n-4)}' | sed 's/-/0/')
-            PASSING=$(echo "$CLEAN" | awk -v n=$FIELD_COUNT '{print $(n-3)}' | sed 's/-/0/')
-            FAILING=$(echo "$CLEAN" | awk -v n=$FIELD_COUNT '{print $(n-2)}' | sed 's/-/0/')
-            PENDING=$(echo "$CLEAN" | awk -v n=$FIELD_COUNT '{print $(n-1)}' | sed 's/-/0/')
-          fi
           
+          if [ -n "$SUMMARY_LINE" ]; then
+            if echo "$SUMMARY_LINE" | grep -q "All specs passed"; then
+              # Kasus Pass: Ambil total dari line "Running: X"
+              TOTAL=$(grep "Running:" cypress-output.txt | tail -1 | grep -oP '\d+')
+              FAILING=0
+              PASSING=$TOTAL
+            else
+              # Kasus Fail: Ambil pattern "X of Y failed"
+              FAILING=$(echo "$SUMMARY_LINE" | grep -oP '\d+(?= of)')
+              TOTAL=$(echo "$SUMMARY_LINE" | grep -oP '(?<=of )\d+')
+              PASSING=$((TOTAL - FAILING))
+            fi
+          fi
+
+          # Default values jika parsing gagal
           TOTAL=${TOTAL:-0}
           PASSING=${PASSING:-0}
           FAILING=${FAILING:-0}
-          PENDING=${PENDING:-0}
 
-          if [ "$TOTAL" -gt 0 ]; then
-            PASS_RATE=$(echo "scale=1; $PASSING * 100 / $TOTAL" | bc)
+          # 2. Tentukan Warna (SMART LOGIC)
+          if [ "$FAILING" -gt 0 ]; then
+            STATUS_TEXT="has failed"
+            RESULT_ICON="❌"
+            COLOR=15158332 # MERAH
           else
-            PASS_RATE="0"
+            STATUS_TEXT="has passed"
+            RESULT_ICON="✅"
+            COLOR=3066993 # HIJAU
           fi
 
+          # 3. Parsing Tambahan (Suite Name & Duration)
           TS_NAME=$(grep -E "│\s+[✔✖]" cypress-output.txt | grep -oE "[A-Za-z0-9_-]+/[A-Za-z0-9_/-]+\.cy\.js" | sed 's|/[^/]*$||' | sort -u | sed 's/^/• /')
           TS_NAME=${TS_NAME:-"• e2e"}
-
           if [ -f duration.txt ]; then TEST_DURATION=$(cat duration.txt); else TEST_DURATION="N/A"; fi
 
+          # 4. Bagian Detail Fail
           FAILED_SECTION=""
-          if [ "$FAILING" != "0" ]; then
+          if [ "$FAILING" -gt 0 ]; then
             FAILED_SPECS=$(grep -E "│\s+✖" cypress-output.txt | grep -oE "[A-Za-z0-9_/-]+\.cy\.js" | sed "s/\.cy\.js$//" | sort -u)
             FAILED_SECTION="**${FAILING} test results failed**"
             if [ -n "$FAILED_SPECS" ]; then
@@ -219,9 +232,8 @@ jobs:
                 done <<< "$FAILED_SPECS"
             fi
           fi
-          # --- PARSING END ---
 
-          # --- DISCORD ---
+          # 5. Kirim ke Discord
           DATE_RUN=$(TZ='Asia/Jakarta' date "+%Y-%m-%d %H:%M:%S WIB")
           TRIGGER_LABEL="${{ github.event_name }}"
           BRANCH_INFO="${{ github.ref_name }}"
@@ -229,9 +241,8 @@ jobs:
           REPO_NAME="${REPO##*/}"
           ALLURE_URL="https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}/"
 
-          COLOR=15158332 
-          TITLE="Automation Report ❌"
-          DESC="Test Run [#${{ github.run_number }}](${ALLURE_URL}) of the **${REPO_NAME}** has failed."
+          TITLE="Automation Report ${RESULT_ICON}"
+          DESC="Test Run [#${{ github.run_number }}](${ALLURE_URL}) of the **${REPO_NAME}** ${STATUS_TEXT}."
 
           BODY="${DESC}
 
@@ -279,7 +290,7 @@ jobs:
   notify-pass:
     name: Notify Discord (Pass)
     runs-on: ubuntu-latest
-    needs: update-gsheet # <--- KEY CHANGE: Menunggu GSheet update dulu
+    needs: update-gsheet
     # Hanya jalan jika job 'cypress-test' sukses
     if: needs.cypress-test.result == 'success'
 
@@ -302,38 +313,64 @@ jobs:
           name: duration-artifact
           path: ./
 
+      # --- SMART SCRIPT START (SAMA PERSIS DENGAN FAIL) ---
       - name: Extract Stats & Send Success Notification
         env:
           DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK }}
         run: |
-          # --- PARSING ---
+          # 1. Parsing Angka Total dan Fail
           SUMMARY_LINE=$(grep -E '(All specs passed|of [0-9]+ failed)' cypress-output.txt | tail -1)
-          if [ -n "$SUMMARY_LINE" ]; then
-            CLEAN=$(echo "$SUMMARY_LINE" | sed 's/[^0-9 \t-]//g' | tr -s ' \t' ' ' | sed 's/^ //')
-            FIELD_COUNT=$(echo "$CLEAN" | awk '{print NF}')
-            TOTAL=$(echo "$CLEAN"   | awk -v n=$FIELD_COUNT '{print $(n-4)}' | sed 's/-/0/')
-            PASSING=$(echo "$CLEAN" | awk -v n=$FIELD_COUNT '{print $(n-3)}' | sed 's/-/0/')
-            FAILING=$(echo "$CLEAN" | awk -v n=$FIELD_COUNT '{print $(n-2)}' | sed 's/-/0/')
-            PENDING=$(echo "$CLEAN" | awk -v n=$FIELD_COUNT '{print $(n-1)}' | sed 's/-/0/')
-          fi
           
+          if [ -n "$SUMMARY_LINE" ]; then
+            if echo "$SUMMARY_LINE" | grep -q "All specs passed"; then
+              # Kasus Pass: Ambil total dari line "Running: X"
+              TOTAL=$(grep "Running:" cypress-output.txt | tail -1 | grep -oP '\d+')
+              FAILING=0
+              PASSING=$TOTAL
+            else
+              # Kasus Fail: Ambil pattern "X of Y failed"
+              FAILING=$(echo "$SUMMARY_LINE" | grep -oP '\d+(?= of)')
+              TOTAL=$(echo "$SUMMARY_LINE" | grep -oP '(?<=of )\d+')
+              PASSING=$((TOTAL - FAILING))
+            fi
+          fi
+
+          # Default values jika parsing gagal
           TOTAL=${TOTAL:-0}
           PASSING=${PASSING:-0}
           FAILING=${FAILING:-0}
-          PENDING=${PENDING:-0}
-          
-          if [ "$TOTAL" -gt 0 ]; then
-            PASS_RATE=$(echo "scale=1; $PASSING * 100 / $TOTAL" | bc)
+
+          # 2. Tentukan Warna (SMART LOGIC)
+          if [ "$FAILING" -gt 0 ]; then
+            STATUS_TEXT="has failed"
+            RESULT_ICON="❌"
+            COLOR=15158332 # MERAH
           else
-            PASS_RATE="0"
+            STATUS_TEXT="has passed"
+            RESULT_ICON="✅"
+            COLOR=3066993 # HIJAU
           fi
 
+          # 3. Parsing Tambahan (Suite Name & Duration)
           TS_NAME=$(grep -E "│\s+[✔✖]" cypress-output.txt | grep -oE "[A-Za-z0-9_-]+/[A-Za-z0-9_/-]+\.cy\.js" | sed 's|/[^/]*$||' | sort -u | sed 's/^/• /')
           TS_NAME=${TS_NAME:-"• e2e"}
-
           if [ -f duration.txt ]; then TEST_DURATION=$(cat duration.txt); else TEST_DURATION="N/A"; fi
 
-          # --- DISCORD ---
+          # 4. Bagian Detail Fail
+          FAILED_SECTION=""
+          if [ "$FAILING" -gt 0 ]; then
+            FAILED_SPECS=$(grep -E "│\s+✖" cypress-output.txt | grep -oE "[A-Za-z0-9_/-]+\.cy\.js" | sed "s/\.cy\.js$//" | sort -u)
+            FAILED_SECTION="**${FAILING} test results failed**"
+            if [ -n "$FAILED_SPECS" ]; then
+                while IFS= read -r spec_name; do
+                  [ -z "$spec_name" ] && continue
+                  FAILED_SECTION="${FAILED_SECTION}
+            • ${spec_name}"
+                done <<< "$FAILED_SPECS"
+            fi
+          fi
+
+          # 5. Kirim ke Discord
           DATE_RUN=$(TZ='Asia/Jakarta' date "+%Y-%m-%d %H:%M:%S WIB")
           TRIGGER_LABEL="${{ github.event_name }}"
           BRANCH_INFO="${{ github.ref_name }}"
@@ -341,9 +378,8 @@ jobs:
           REPO_NAME="${REPO##*/}"
           ALLURE_URL="https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}/"
 
-          COLOR=3066993 
-          TITLE="Automation Report ✅"
-          DESC="Test Run [#${{ github.run_number }}](${ALLURE_URL}) of the **${REPO_NAME}** has passed."
+          TITLE="Automation Report ${RESULT_ICON}"
+          DESC="Test Run [#${{ github.run_number }}](${ALLURE_URL}) of the **${REPO_NAME}** ${STATUS_TEXT}."
 
           BODY="${DESC}
 
@@ -359,6 +395,13 @@ jobs:
           ✅  Passed    : ${PASSING}
           ❌  Failed    : ${FAILING}"
 
+          if [ -n "$FAILED_SECTION" ]; then
+            BODY="${BODY}
+
+          ─────────────────
+          ${FAILED_SECTION}"
+          fi
+          
           FOOTER="${REPO} | ${BRANCH_INFO} | ${TRIGGER_LABEL}"
 
           jq -n \
