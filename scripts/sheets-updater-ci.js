@@ -1,97 +1,152 @@
 const fs = require('fs');
 const { google } = require('googleapis');
+const { XMLParser } = require('fast-xml-parser');
 
 // --- CONFIGURATION ---
-const SPREADSHEET_ID = '1RLzrVcgdyifgq4D-tzRHKAKHGLyiNEQ-iGsDYo8H4b4'; // ID Sheet kamu
-const SHEET_NAME = 'Sheet1'; // Pastikan nama tab di Sheet kamu "Sheet1" atau sesuaikan di sini
+const SPREADSHEET_ID = '1RLzrVcgdyifgq4D-tzRHKAKHGLyiNEQ-iGsDYo8H4b4';
+const SHEET_NAME = 'Sheet1'; 
 const CREDENTIALS_PATH = 'google-credentials.json';
 
-// --- MAIN FUNCTION ---
+// --- HELPER: PARSE ALLURE RESULTS ---
+function parseAllureResults() {
+  const resultsDir = 'allure-results';
+  if (!fs.existsSync(resultsDir)) {
+    console.log('Folder allure-results tidak ditemukan.');
+    return [];
+  }
+
+  const files = fs.readdirSync(resultsDir);
+  const parser = new XMLParser({ ignoreAttributes: false });
+  const testCases = [];
+
+  files.forEach(file => {
+    if (file.endsWith('.xml')) {
+      const content = fs.readFileSync(`${resultsDir}/${file}`, 'utf8');
+      const parsed = parser.parse(content);
+      
+      // Struktur XML Allure
+      if (parsed.testCase) {
+        const tc = parsed.testCase;
+        let rawName = tc['@_name'] || "Unknown Test";
+        
+        // Bersihkan nama: Ambil bagian terakhir jika pakai "Folder -> NamaTest"
+        let cleanName = rawName.includes(' -> ') ? rawName.split(' -> ').pop().trim() : rawName;
+        cleanName = cleanName.includes('/') ? cleanName.split('/').pop() : cleanName;
+        
+        let status = (tc['@_status'] || 'unknown').toUpperCase();
+        let duration = tc['@_time'] ? parseFloat(tc['@_time']).toFixed(2) + "s" : "N/A";
+        
+        let errorMessage = "As Expected";
+        if (status === 'FAILED' && tc.failure) {
+            errorMessage = tc.failure['@_message'] || "Test Failed";
+            // Ambil hanya 1 baris pertama error agar rapi
+            errorMessage = errorMessage.split('\n')[0]; 
+        }
+
+        testCases.push({
+            rawName: rawName,     // Nama asli dari Cypress
+            cleanName: cleanName, // Nama yang sudah dibersihkan
+            status: status, 
+            duration: duration,
+            actual: errorMessage
+        });
+      }
+    }
+  });
+  return testCases;
+}
+
+// --- MAIN ---
 async function updateSheet() {
   try {
-    // 1. Parse Hasil Test dari File Artifact
-    if (!fs.existsSync('cypress-output.txt')) {
-      console.log('cypress-output.txt tidak ditemukan. Tidak ada data untuk diupdate.');
-      return;
-    }
+    // 1. Parse Data
+    const testResults = parseAllureResults();
+    console.log(`\n📦 Parsing Allure: Ditemukan ${testResults.length} test case.`);
 
-    const output = fs.readFileSync('cypress-output.txt', 'utf8');
-    
-    let passed = 0;
-    let failed = 0;
-    let total = 0;
-    let status = 'UNKNOWN';
+    if (testResults.length === 0) return;
 
-    // Regex untuk mencari baris summary. Contoh output: "All specs passed!" atau "2 of 20 failed"
-    const summaryLine = output.match(/(All specs passed|of [0-9]+ failed)/);
-
-    if (summaryLine) {
-      const line = summaryLine[0];
-      if (line.includes('All specs passed')) {
-        status = 'PASS';
-        // Cari total test dari baris sebelumnya (biasanya: "Running: X")
-        const matchTotal = output.match(/Running: ([0-9]+)/);
-        total = matchTotal ? parseInt(matchTotal[1]) : 0;
-        passed = total;
-        failed = 0;
-      } else if (line.includes('failed')) {
-        status = 'FAIL';
-        // Format biasanya: "2 of 20 failed"
-        const parts = line.match(/(\d+) of (\d+) failed/);
-        if (parts) {
-          failed = parseInt(parts[1]);
-          total = parseInt(parts[2]);
-          passed = total - failed;
-        }
-      }
-    } else {
-        // Jika pattern tidak ketemu, coba cara alternatif
-        console.log('Pattern standar tidak ditemukan, mencoba parsing alternatif...');
-        const matchTotal = output.match(/(\d+) of (\d+) tests passed/); // "18 of 20 tests passed"
-        if(matchTotal) {
-             passed = parseInt(matchTotal[1]);
-             total = parseInt(matchTotal[2]);
-             failed = total - passed;
-             status = failed > 0 ? 'FAIL' : 'PASS';
-        } else {
-            console.log('Gagal memparse hasil test.');
-            return;
-        }
-    }
-
-    console.log(`Parsed Result: Total=${total}, Passed=${passed}, Failed=${failed}, Status=${status}`);
-
-    // 2. Auth ke Google Sheets
+    // 2. Baca Data Sheet
     const auth = new google.auth.GoogleAuth({
       keyFile: CREDENTIALS_PATH,
       scopes: ['https://www.googleapis.com/auth/spreadsheets']
     });
 
     const sheets = google.sheets({ version: 'v4', auth });
-
-    // 3. Siapkan Data (Tanggal, Status, Total, Pass, Fail)
-    const date = new Date().toISOString().split('T')[0]; // Format YYYY-MM-DD
-    const time = new Date().toLocaleTimeString('id-ID', { timeZone: 'Asia/Jakarta' }); // WIB
-    const values = [[date, time, status, total, passed, failed]];
-
-    // 4. Append (Tambah) data ke baris paling bawah
-    const resource = {
-      values,
-    };
-
-    await sheets.spreadsheets.values.append({
+    
+    // Ambil data Sheet (Kita ambil dari baris 2 sampai 1000)
+    // Asumsi header ada di baris 1
+    const res = await sheets.spreadsheets.values.get({
       spreadsheetId: SPREADSHEET_ID,
-      range: `${SHEET_NAME}!A1`, // Mulai cari kolom dari A1
-      valueInputOption: 'USER_ENTERED',
-      insertDataOption: 'INSERT_ROWS',
-      resource,
+      range: `${SHEET_NAME}!A2:H1000`,
     });
 
-    console.log('✅ Berhasil update Google Sheet!');
+    const rows = res.data.values || [];
+    if (rows.length === 0) {
+      console.log('⚠️ GSheet kosong atau tidak terbaca.');
+      return;
+    }
+
+    // Index Kolom (A=0, B=1, dst)
+    // A: TestID (0), B: Title (1), C: Steps (2), D: Expected (3), E: Actual (4), F: Status (5), G: LastRun (6), H: Duration (7)
+    
+    const updates = [];
+    const dateNow = new Date().toISOString().split('T')[0]; 
+    const timestamp = new Date().toLocaleTimeString('id-ID', { timeZone: 'Asia/Jakarta', hour12: false });
+
+    testResults.forEach(result => {
+      // LOGIC MATCHING: Cari baris yang cocok
+      // Prioritas 1: Cocokkan dengan Col B (Title)
+      // Prioritas 2: Cocokkan dengan Col A (TestID)
+      
+      let rowIndex = -1;
+      let matchType = "";
+
+      // 1. Coba cocokkan Title (Case Insensitive)
+      rowIndex = rows.findIndex(row => row[1] && row[1].trim().toLowerCase() === result.cleanName.toLowerCase());
+      if (rowIndex !== -1) {
+        matchType = "Title";
+      } else {
+        // 2. Coba cocokkan TestID (Col A)
+        rowIndex = rows.findIndex(row => row[0] && row[0].trim().toLowerCase() === result.cleanName.toLowerCase());
+        if (rowIndex !== -1) {
+          matchType = "TestID";
+        }
+      }
+
+      if (rowIndex !== -1) {
+        const rowNum = rowIndex + 2; // +2 karena header di baris 1, array mulai 0
+        console.log(`✅ MATCH FOUND (${matchType}): [Row ${rowNum}] "${result.cleanName}" -> ${result.status}`);
+
+        // Siapkan data update: [Actual, Status, LastRun, Duration]
+        // Target Kolom: E(4), F(5), G(6), H(7)
+        // GSheet membutuhkan format [ [row1_values], [row2_values] ]
+        updates.push({
+          range: `${SHEET_NAME}!E${rowNum}:H${rowNum}`,
+          values: [[result.actual, result.status, `${dateNow} ${timestamp}`, result.duration]]
+        });
+      } else {
+        console.log(`❌ NOT FOUND: "${result.cleanName}" (Cek kolom Title/TestID di GSheet)`);
+      }
+    });
+
+    // 3. Batch Update
+    if (updates.length > 0) {
+      await sheets.spreadsheets.values.batchUpdate({
+        spreadsheetId: SPREADSHEET_ID,
+        requestBody: {
+          valueInputOption: "USER_ENTERED",
+          data: updates
+        }
+      });
+      console.log(`\n🚀 Berhasil update ${updates.length} baris di GSheet.`);
+    } else {
+      console.log('\n⚠️ Tidak ada update yang dilakukan (Nama test case tidak cocok dengan GSheet).');
+      console.log('💡 Tips: Pastikan "Title" di GSheet SAMA dengan nama test di Cypress (bagian "it(...)").');
+    }
 
   } catch (error) {
-    console.error('❌ Error saat update GSheet:', error);
-    // Jangan throw error agar pipeline tetap bisa lanjut ke notifikasi jika perlu
+    console.error('❌ Error GSheet:', error);
+    throw error;
   }
 }
 
