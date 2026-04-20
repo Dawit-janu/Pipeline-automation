@@ -47,11 +47,20 @@ jobs:
             --key ${{ secrets.CYPRESS_RECORD_KEY }} \
             2>&1 | tee cypress-raw.txt
 
+      # --- TEPAT DIBAWAH INI (TAMBAHKAN STEP INI) ---
+      - name: Upload Allure Results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: allure-results
+          path: allure-results/
+          retention-days: 1
+
       - name: Strip ANSI color codes
         if: always()
         run: sed 's/\x1B\[[0-9;]*[mKHF]//g' cypress-raw.txt > cypress-output.txt
 
-      # Upload artifact untuk Job GSheet dan Report
+
       - name: Upload Raw Output
         if: always()
         uses: actions/upload-artifact@v4
@@ -90,6 +99,13 @@ jobs:
     steps:
       - name: Checkout repo
         uses: actions/checkout@v4
+
+    # --- TAMBAHKAN STEP INI DI SINI ---
+      - name: Download Allure Results
+        uses: actions/download-artifact@v4
+        with:
+          name: allure-results
+          path: ./allure-results
 
       - name: Download Output Text
         uses: actions/download-artifact@v4
@@ -177,7 +193,7 @@ jobs:
           path: ./
 
       # --- SMART SCRIPT START ---
-      - name: Extract Stats & Send Fail Notification
+      - name: Extract Stats & Send Notification
         env:
           DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK }}
         run: |
@@ -207,16 +223,25 @@ jobs:
           if [ "$FAILING" -gt 0 ]; then
             STATUS_TEXT="has failed"
             RESULT_ICON="❌"
-            COLOR=15158332 # MERAH
+            COLOR=15158332 
           else
             STATUS_TEXT="has passed"
             RESULT_ICON="✅"
-            COLOR=3066993 # HIJAU
+            COLOR=3066993 
           fi
 
-          # 3. Parsing Tambahan (Suite Name & Duration)
-          TS_NAME=$(grep -E "│\s+[✔✖]" cypress-output.txt | grep -oE "[A-Za-z0-9_-]+/[A-Za-z0-9_/-]+\.cy\.js" | sed 's|/[^/]*$||' | sort -u | sed 's/^/• /')
+          # 3. LOGIC TEST SUITE (DIUBAH SESUAI REQUEST)
+          # Jika Fail > 0 -> Tampilkan yang gagal saja
+          # Jika Fail = 0 -> Tampilkan SEMUA list spec
+          if [ "$FAILING" -gt 0 ]; then
+            # Cari baris yang ada tanda ✖ lalu ambil nama filenya
+            TS_NAME=$(grep -E "│\s+✖" cypress-output.txt | grep -oE "[A-Za-z0-9_-]+/[A-Za-z0-9_/-]+\.cy\.js" | sort -u | sed 's/^/• /')
+          else
+            # Cari SEMUA file .cy\.js yang muncul di output
+            TS_NAME=$(grep -oE "[A-Za-z0-9_-]+/[A-Za-z0-9_/-]+\.cy\.js" cypress-output.txt | sort -u | sed 's/^/• /')
+          fi
           TS_NAME=${TS_NAME:-"• e2e"}
+
           if [ -f duration.txt ]; then TEST_DURATION=$(cat duration.txt); else TEST_DURATION="N/A"; fi
 
           # 4. Bagian Detail Fail
@@ -314,7 +339,7 @@ jobs:
           path: ./
 
       # --- SMART SCRIPT START (SAMA PERSIS DENGAN FAIL) ---
-      - name: Extract Stats & Send Success Notification
+      - name: Extract Stats & Send Notification
         env:
           DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK }}
         run: |
@@ -344,16 +369,25 @@ jobs:
           if [ "$FAILING" -gt 0 ]; then
             STATUS_TEXT="has failed"
             RESULT_ICON="❌"
-            COLOR=15158332 # MERAH
+            COLOR=15158332 
           else
             STATUS_TEXT="has passed"
             RESULT_ICON="✅"
-            COLOR=3066993 # HIJAU
+            COLOR=3066993 
           fi
 
-          # 3. Parsing Tambahan (Suite Name & Duration)
-          TS_NAME=$(grep -E "│\s+[✔✖]" cypress-output.txt | grep -oE "[A-Za-z0-9_-]+/[A-Za-z0-9_/-]+\.cy\.js" | sed 's|/[^/]*$||' | sort -u | sed 's/^/• /')
+          # 3. LOGIC TEST SUITE (DIUBAH SESUAI REQUEST)
+          # Jika Fail > 0 -> Tampilkan yang gagal saja
+          # Jika Fail = 0 -> Tampilkan SEMUA list spec
+          if [ "$FAILING" -gt 0 ]; then
+            # Cari baris yang ada tanda ✖ lalu ambil nama filenya
+            TS_NAME=$(grep -E "│\s+✖" cypress-output.txt | grep -oE "[A-Za-z0-9_-]+/[A-Za-z0-9_/-]+\.cy\.js" | sort -u | sed 's/^/• /')
+          else
+            # Cari SEMUA file .cy\.js yang muncul di output
+            TS_NAME=$(grep -oE "[A-Za-z0-9_-]+/[A-Za-z0-9_/-]+\.cy\.js" cypress-output.txt | sort -u | sed 's/^/• /')
+          fi
           TS_NAME=${TS_NAME:-"• e2e"}
+
           if [ -f duration.txt ]; then TEST_DURATION=$(cat duration.txt); else TEST_DURATION="N/A"; fi
 
           # 4. Bagian Detail Fail
