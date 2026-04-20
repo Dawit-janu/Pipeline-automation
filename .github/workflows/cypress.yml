@@ -1,30 +1,24 @@
 name: Cypress Automation Test
 
 on:
-  # 🚀 Push ke main → trigger (merge dari QA branch setelah fix)
   push:
     branches: [ main ]
-
-  # 🔀 Pull Request ke main → trigger saat QA buat PR dari branch fix
   pull_request:
     branches: [ main ]  
-
-  # 🖐 Manual trigger
   workflow_dispatch:
-
-  # ✅ STEP 2 — SCHEDULER (DITAMBAHKAN DI SINI)
   schedule:
-   #- cron: '0 1 * * *'   # 08:00 WIB (UTC+7)
-   #- cron: '40 20 * * *'
-      - cron: '0 23 * * 0-5'
-      - cron: '0 5 * * 1-6'
-      #- cron: '*/5 * * * *'
+    - cron: '0 23 * * 0-5'
+    - cron: '0 5 * * 1-6'
 
 permissions:
-  contents: write # WAJIB agar bisa deploy ke GitHub Pages
+  contents: write
 
 jobs:
-  cypress-run:
+  # ==========================================
+  # STAGE 1: TEST
+  # ==========================================
+  cypress-test:
+    name: Run Cypress Tests
     runs-on: ubuntu-latest
 
     steps:
@@ -34,24 +28,19 @@ jobs:
       - name: Record Start Time
         run: date +%s > start_time.txt
 
-      - name: Detect trigger
-        run: echo "TRIGGER=${{ github.event_name }}" >> $GITHUB_ENV
-
-      - name: Install dependencies
-        run: sudo apt-get update && sudo apt-get install -y jq bc
-
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: 18
 
+      - name: Install dependencies
+        run: sudo apt-get update && sudo apt-get install -y jq bc
+
       - name: Install project dependencies
         run: npm ci
-      # ============================================================
+
       # RUN CYPRESS
-      # ============================================================
       - name: Run Cypress Tests
-        continue-on-error: true
         run: |
           npx cypress run \
             --record \
@@ -62,109 +51,136 @@ jobs:
         if: always()
         run: sed 's/\x1B\[[0-9;]*[mKHF]//g' cypress-raw.txt > cypress-output.txt
 
-      # ============================================================
-      # ALLURE
-      # ============================================================
-      - name: Generate Allure Report
-        if: always()
-        run: |
-          npm install -g allure-commandline --quiet
-          if [ -d allure-results ] && [ "$(ls -A allure-results 2>/dev/null)" ]; then
-            allure generate allure-results --clean -o allure-report
-          fi
-
-      # 1. Upload folder Report utk Job selanjutnya
-      - name: Upload Allure Artifact
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: allure-report
-          path: allure-report/
-          retention-days: 30
-          
-      # 2. Upload text output utk Job selanjutnya (untuk parse statistik)
-      - name: Upload Output Artifact
+      # Upload artifact untuk Job GSheet dan Report
+      - name: Upload Raw Output
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: cypress-output
           path: cypress-output.txt
           retention-days: 1
-      # ============================================================
-      # 2. HITUNG & UPLOAD DURASI (BARU)
-      # ============================================================
-      - name: Calculate Test Duration
+          
+      - name: Calculate Duration
         if: always()
         run: |
-          if [ -f start_time.txt ]; then
-            # PERBAIKAN: Hapus spasi di sini (SEHARUSNYA TIDAK ADA SPASI SETELAH START)
-            START=$(cat start_time.txt)
-            END=$(date +%s)
-            DURATION=$((END - START))
-            MINUTES=$((DURATION / 60))
-            SECONDS=$((DURATION % 60))
-            echo "${MINUTES}m ${SECONDS}s" > duration.txt
-          else
-            echo "0m 0s" > duration.txt
-          fi
+          START=$(cat start_time.txt)
+          END=$(date +%s)
+          DURATION=$((END - START))
+          MINUTES=$((DURATION / 60))
+          SECONDS=$((DURATION % 60))
+          echo "${MINUTES}m ${SECONDS}s" > duration.txt
 
-      - name: Upload Duration Artifact
+      - name: Upload Duration
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: duration-artifact
           path: duration.txt
           retention-days: 1
-      # ============================================================
-      # JOB 2: DEPLOY & DISCORD
-    # ============================================================
-  deploy-and-notify:
-    needs: cypress-run
-    # Jalankan walaupun test sebelumnya fail/gagal
-    if: always() 
+
+  # ==========================================
+  # STAGE 2: REPORT
+  # ==========================================
+  report:
+    name: Deploy Report
     runs-on: ubuntu-latest
+    needs: cypress-test
+    if: always() 
 
     steps:
-      - name: Checkout repo (Required for deploy)
+      - name: Checkout repo
         uses: actions/checkout@v4
 
-      # Download report dari Job 1
-      - name: Download Allure Report
-        uses: actions/download-artifact@v4
-        with:
-          name: allure-report
-          path: ./allure-report
-
-      # Download text output dari Job 1
       - name: Download Output Text
         uses: actions/download-artifact@v4
         with:
           name: cypress-output
           path: ./
 
-      # Download duration dari Job 1 (POSISI YANG BENAR)
-      - name: Download Duration Artifact
-        uses: actions/download-artifact@v4
-        with:
-          name: duration-artifact
-          path: ./
-      # ============================================================
-      # DEPLOY KE GITHUB PAGES
-      # ============================================================
+      - name: Generate Allure Report
+        run: |
+          npm install -g allure-commandline --quiet
+          if [ -d allure-results ] && [ "$(ls -A allure-results 2>/dev/null)" ]; then
+            allure generate allure-results --clean -o allure-report
+          else
+            mkdir -p allure-report
+            echo "<h1>No Test Results Found</h1>" > allure-report/index.html
+          fi
+
       - name: Deploy to GitHub Pages
         uses: peaceiris/actions-gh-pages@v3
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
           publish_dir: ./allure-report
-          force_orphan: true # Agar history git tetap bersih
+          force_orphan: true
 
-      # ============================================================
-      # EXTRACT STATS
-      # ============================================================
-      - name: Extract test summary
-        if: always()  
+  # ==========================================
+  # STAGE 3: DATA (UPDATE GSHEET)
+  # ==========================================
+  # UPDATE LOGIC: Jalan SELALU (Pass atau Fail)
+  update-gsheet:
+    name: Update Google Sheet
+    runs-on: ubuntu-latest
+    container: node:18-alpine
+    needs: cypress-test
+    if: always() # <--- KEY CHANGE: Jalan meskipun test gagal
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      # Download output agar script bisa baca hasil Pass/Fail
+      - name: Download Output Text
+        uses: actions/download-artifact@v4
+        with:
+          name: cypress-output
+          path: ./
+
+      - name: Install Dependencies
+        run: npm ci --omit=dev
+
+      - name: Write Credentials
+        run: echo "$GOOGLE_CREDENTIALS" > google-credentials.json
+        env:
+          GOOGLE_CREDENTIALS: ${{ secrets.GOOGLE_CREDENTIALS }}
+
+      - name: Update Sheet
+        run: node scripts/sheets-updater-ci.js
+
+  # ==========================================
+  # STAGE 4: NOTIFY (FAIL)
+  # ==========================================
+  notify-fail:
+    name: Notify Discord (Fail)
+    runs-on: ubuntu-latest
+    needs: update-gsheet # <--- KEY CHANGE: Menunggu GSheet update dulu
+    # Hanya jalan jika job 'cypress-test' gagal
+    if: needs.cypress-test.result == 'failure' 
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Install Utils
+        run: sudo apt-get update && sudo apt-get install -y jq bc
+
+      - name: Download Output
+        uses: actions/download-artifact@v4
+        with:
+          name: cypress-output
+          path: ./
+
+      - name: Download Duration
+        uses: actions/download-artifact@v4
+        with:
+          name: duration-artifact
+          path: ./
+
+      - name: Extract Stats & Send Fail Notification
+        env:
+          DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK }}
         run: |
-          # Parsing logic sama persis
+          # --- PARSING LOGIC ---
           SUMMARY_LINE=$(grep -E '(All specs passed|of [0-9]+ failed)' cypress-output.txt | tail -1)
           if [ -n "$SUMMARY_LINE" ]; then
             CLEAN=$(echo "$SUMMARY_LINE" | sed 's/[^0-9 \t-]//g' | tr -s ' \t' ' ' | sed 's/^ //')
@@ -186,144 +202,178 @@ jobs:
             PASS_RATE="0"
           fi
 
-          # Parsing TS Name
           TS_NAME=$(grep -E "│\s+[✔✖]" cypress-output.txt | grep -oE "[A-Za-z0-9_-]+/[A-Za-z0-9_/-]+\.cy\.js" | sed 's|/[^/]*$||' | sort -u | sed 's/^/• /')
           TS_NAME=${TS_NAME:-"• e2e"}
 
-          # BACA DURASI DARI FILE
-          if [ -f duration.txt ]; then
-            TEST_DURATION=$(cat duration.txt)
-          else
-            TEST_DURATION="N/A"
+          if [ -f duration.txt ]; then TEST_DURATION=$(cat duration.txt); else TEST_DURATION="N/A"; fi
+
+          FAILED_SECTION=""
+          if [ "$FAILING" != "0" ]; then
+            FAILED_SPECS=$(grep -E "│\s+✖" cypress-output.txt | grep -oE "[A-Za-z0-9_/-]+\.cy\.js" | sed "s/\.cy\.js$//" | sort -u)
+            FAILED_SECTION="**${FAILING} test results failed**"
+            if [ -n "$FAILED_SPECS" ]; then
+                while IFS= read -r spec_name; do
+                  [ -z "$spec_name" ] && continue
+                  FAILED_SECTION="${FAILED_SECTION}
+            • ${spec_name}"
+                done <<< "$FAILED_SPECS"
+            fi
           fi
+          # --- PARSING END ---
 
-          # Simpan ke ENV
-          echo "TOTAL_TESTS=$TOTAL" >> $GITHUB_ENV
-          echo "PASSED_TESTS=$PASSING" >> $GITHUB_ENV
-          echo "FAILED_TESTS=$FAILING" >> $GITHUB_ENV
-          echo "PENDING_TESTS=$PENDING" >> $GITHUB_ENV
-          echo "PASS_RATE=${PASS_RATE}%" >> $GITHUB_ENV
-          echo "TEST_DURATION=$TEST_DURATION" >> $GITHUB_ENV
-          echo "TS_NAME<<EOF" >> $GITHUB_ENV
-          echo "$TS_NAME" >> $GITHUB_ENV
-          echo "EOF" >> $GITHUB_ENV
-
-      - name: Extract failed test details
-        if: always()
-        run: |
-          FAILED_SPECS=$(grep -E "│\s+✖" cypress-output.txt | grep -oE "[A-Za-z0-9_/-]+\.cy\.js" | sed "s/\.cy\.js$//" | sort -u)
-          FAILED_TESTS_PARSED=$(awk '
-            /^[[:space:]]+[0-9]+\)/ { in_block=1; describe_line=""; test_line=""; next }
-            in_block==1 && /^[[:space:]]+[A-Za-z]/ && describe_line=="" {
-              line=$0; gsub(/^[[:space:]]+/, "", line); describe_line=line; next
-            }
-            in_block==1 && /^[[:space:]]+[A-Za-z]/ && describe_line!="" && test_line=="" {
-              line=$0; gsub(/^[[:space:]]+/, "", line); gsub(/:$/, "", line)
-              test_line=line; print describe_line "|" test_line; in_block=0
-            }
-            /^[[:space:]]*$/ && in_block==1 { in_block=0 }
-          ' cypress-output.txt)
-
-          echo "FAILED_SPECS<<EOF" >> $GITHUB_ENV
-          echo "$FAILED_SPECS" >> $GITHUB_ENV
-          echo "EOF" >> $GITHUB_ENV
-          
-          echo "FAILED_TESTS_PARSED<<EOF" >> $GITHUB_ENV
-          echo "$FAILED_TESTS_PARSED" >> $GITHUB_ENV
-          echo "EOF" >> $GITHUB_ENV
-
-      # ============================================================
-      # DISCORD NOTIFICATION
-      # ============================================================
-      - name: Send Discord Notification
-        if: always()
-        run: |
+          # --- DISCORD ---
           DATE_RUN=$(TZ='Asia/Jakarta' date "+%Y-%m-%d %H:%M:%S WIB")
-
-          TOTAL=${TOTAL_TESTS:-0}
-          PASSED=${PASSED_TESTS:-0}
-          FAILED=${FAILED_TESTS:-0}
-          PENDING=${PENDING_TESTS:-0}
-
-          if [ "$FAILED" != "0" ]; then
-            STATUS_TEXT="has failed"
-            RESULT_ICON="❌"
-            COLOR=15158332
-          else
-            STATUS_TEXT="has passed"
-            RESULT_ICON="✅"
-            COLOR=3066993
-          fi
-
-          case "${{ github.event_name }}" in
-            schedule)          TRIGGER_LABEL="Scheduled"    ;;
-            push)              TRIGGER_LABEL="Push to main" ;;
-            pull_request)      TRIGGER_LABEL="Pull Request" ;;
-            workflow_dispatch) TRIGGER_LABEL="Manual"       ;;
-            *)                 TRIGGER_LABEL="${{ github.event_name }}"     ;;
-          esac
-
-          if [ "${{ github.event_name }}" = "pull_request" ]; then
-            BRANCH_INFO="PR #${{ github.event.pull_request.number }} (${{ github.head_ref }})"
-          else
-            BRANCH_INFO="${{ github.ref_name }}"
-          fi
-
+          TRIGGER_LABEL="${{ github.event_name }}"
+          BRANCH_INFO="${{ github.ref_name }}"
           REPO="${{ github.repository }}"
           REPO_NAME="${REPO##*/}"
           ALLURE_URL="https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}/"
 
-          if [ "$FAILED" != "0" ] && [ -n "$FAILED_SPECS" ]; then
-            SUITE_DISPLAY=$(echo "$FAILED_SPECS" | sed 's|/[^/]*$||' | sort -u | sed 's/^/• /')
-          else
-            SUITE_DISPLAY="$TS_NAME"
-          fi
-
-          FAILED_SECTION=""
-          if [ "$FAILED" != "0" ]; then
-            FAILED_SECTION="**${FAILED} test results failed**"
-            if [ -n "$FAILED_SPECS" ]; then
-              while IFS= read -r spec_name; do
-                [ -z "$spec_name" ] && continue
-                FAILED_SECTION="${FAILED_SECTION}
-          • ${spec_name}"
-                        done <<< "$FAILED_SPECS"
-                      fi
-                    fi
-
-          TITLE="Automation Report Allure"
-          DESC="Test Run [#${{ github.run_number }}](${ALLURE_URL}) of the **${REPO_NAME}** ${STATUS_TEXT}."
+          COLOR=15158332 
+          TITLE="Automation Report ❌"
+          DESC="Test Run [#${{ github.run_number }}](${ALLURE_URL}) of the **${REPO_NAME}** has failed."
 
           BODY="${DESC}
 
           **Test Suite**
-          ${SUITE_DISPLAY}
+          ${TS_NAME}
 
           **Execution**
           🗓  ${DATE_RUN}
-          ⏱  ${TEST_DURATION:-"N/A"}
+          ⏱  ${TEST_DURATION}
 
           **Results**
           Total Runs    : ${TOTAL}
-          ✅  Passed    : ${PASSED}
-          ❌  Failed    : ${FAILED}"
+          ✅  Passed    : ${PASSING}
+          ❌  Failed    : ${FAILING}"
 
           if [ -n "$FAILED_SECTION" ]; then
             BODY="${BODY}
 
           ─────────────────
           ${FAILED_SECTION}"
-                    fi
+          fi
+          
+          FOOTER="${REPO} | ${BRANCH_INFO} | ${TRIGGER_LABEL}"
 
-                    FOOTER="${REPO} | ${BRANCH_INFO} | ${TRIGGER_LABEL}"
+          jq -n \
+            --arg title "$TITLE" \
+            --arg body "$BODY" \
+            --arg footer "$FOOTER" \
+            --arg url "$ALLURE_URL" \
+            --argjson color $COLOR \
+            '{
+              embeds: [{
+                title: $title,
+                url: $url,
+                description: $body,
+                color: $color,
+                footer: { text: $footer },
+                timestamp: (now | todateiso8601)
+              }]
+            }' | curl -s -H "Content-Type: application/json" -X POST -d @- $DISCORD_WEBHOOK
 
-                    jq -n             --arg title  "$TITLE"             --arg body   "$BODY"             --arg footer "$FOOTER"             --arg url    "$ALLURE_URL"             --argjson color $COLOR           '{
-                      embeds: [{
-                                title: $title,
-                                url: $url,
-                                description: $body,
-                                color: $color,
-                                footer: { text: $footer },
-                                timestamp: (now | todateiso8601)
-                              }]
-                              }'| curl -s -H "Content-Type: application/json"               -X POST               -d @-               ${{ secrets.DISCORD_WEBHOOK }}
+  # ==========================================
+  # STAGE 4: NOTIFY (PASS)
+  # ==========================================
+  notify-pass:
+    name: Notify Discord (Pass)
+    runs-on: ubuntu-latest
+    needs: update-gsheet # <--- KEY CHANGE: Menunggu GSheet update dulu
+    # Hanya jalan jika job 'cypress-test' sukses
+    if: needs.cypress-test.result == 'success'
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Install Utils
+        run: sudo apt-get update && sudo apt-get install -y jq bc
+
+      - name: Download Output
+        uses: actions/download-artifact@v4
+        with:
+          name: cypress-output
+          path: ./
+
+      - name: Download Duration
+        uses: actions/download-artifact@v4
+        with:
+          name: duration-artifact
+          path: ./
+
+      - name: Extract Stats & Send Success Notification
+        env:
+          DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK }}
+        run: |
+          # --- PARSING ---
+          SUMMARY_LINE=$(grep -E '(All specs passed|of [0-9]+ failed)' cypress-output.txt | tail -1)
+          if [ -n "$SUMMARY_LINE" ]; then
+            CLEAN=$(echo "$SUMMARY_LINE" | sed 's/[^0-9 \t-]//g' | tr -s ' \t' ' ' | sed 's/^ //')
+            FIELD_COUNT=$(echo "$CLEAN" | awk '{print NF}')
+            TOTAL=$(echo "$CLEAN"   | awk -v n=$FIELD_COUNT '{print $(n-4)}' | sed 's/-/0/')
+            PASSING=$(echo "$CLEAN" | awk -v n=$FIELD_COUNT '{print $(n-3)}' | sed 's/-/0/')
+            FAILING=$(echo "$CLEAN" | awk -v n=$FIELD_COUNT '{print $(n-2)}' | sed 's/-/0/')
+            PENDING=$(echo "$CLEAN" | awk -v n=$FIELD_COUNT '{print $(n-1)}' | sed 's/-/0/')
+          fi
+          
+          TOTAL=${TOTAL:-0}
+          PASSING=${PASSING:-0}
+          FAILING=${FAILING:-0}
+          PENDING=${PENDING:-0}
+          
+          if [ "$TOTAL" -gt 0 ]; then
+            PASS_RATE=$(echo "scale=1; $PASSING * 100 / $TOTAL" | bc)
+          else
+            PASS_RATE="0"
+          fi
+
+          TS_NAME=$(grep -E "│\s+[✔✖]" cypress-output.txt | grep -oE "[A-Za-z0-9_-]+/[A-Za-z0-9_/-]+\.cy\.js" | sed 's|/[^/]*$||' | sort -u | sed 's/^/• /')
+          TS_NAME=${TS_NAME:-"• e2e"}
+
+          if [ -f duration.txt ]; then TEST_DURATION=$(cat duration.txt); else TEST_DURATION="N/A"; fi
+
+          # --- DISCORD ---
+          DATE_RUN=$(TZ='Asia/Jakarta' date "+%Y-%m-%d %H:%M:%S WIB")
+          TRIGGER_LABEL="${{ github.event_name }}"
+          BRANCH_INFO="${{ github.ref_name }}"
+          REPO="${{ github.repository }}"
+          REPO_NAME="${REPO##*/}"
+          ALLURE_URL="https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}/"
+
+          COLOR=3066993 
+          TITLE="Automation Report ✅"
+          DESC="Test Run [#${{ github.run_number }}](${ALLURE_URL}) of the **${REPO_NAME}** has passed."
+
+          BODY="${DESC}
+
+          **Test Suite**
+          ${TS_NAME}
+
+          **Execution**
+          🗓  ${DATE_RUN}
+          ⏱  ${TEST_DURATION}
+
+          **Results**
+          Total Runs    : ${TOTAL}
+          ✅  Passed    : ${PASSING}
+          ❌  Failed    : ${FAILING}"
+
+          FOOTER="${REPO} | ${BRANCH_INFO} | ${TRIGGER_LABEL}"
+
+          jq -n \
+            --arg title "$TITLE" \
+            --arg body "$BODY" \
+            --arg footer "$FOOTER" \
+            --arg url "$ALLURE_URL" \
+            --argjson color $COLOR \
+            '{
+              embeds: [{
+                title: $title,
+                url: $url,
+                description: $body,
+                color: $color,
+                footer: { text: $footer },
+                timestamp: (now | todateiso8601)
+              }]
+            }' | curl -s -H "Content-Type: application/json" -X POST -d @- $DISCORD_WEBHOOK
