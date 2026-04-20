@@ -139,11 +139,20 @@ jobs:
     runs-on: ubuntu-latest
     container: node:18-alpine
     needs: cypress-test
-    if: always() # <--- KEY CHANGE: Jalan meskipun test gagal
+    if: always() 
 
     steps:
       - name: Checkout repo
         uses: actions/checkout@v4
+    
+    # -----------------------------------
+    # TAMBAHKAN STEP INI DI SINI:
+    # -----------------------------------
+      - name: Download Allure Results
+        uses: actions/download-artifact@v4
+        with:
+          name: allure-results
+          path: ./
 
       # Download output agar script bisa baca hasil Pass/Fail
       - name: Download Output Text
