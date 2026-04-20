@@ -229,24 +229,25 @@ jobs:
             COLOR=3066993 
           fi
 
-          # 3. LOGIC TEST SUITE (PERBAIKAN: Tampilkan TS saja, hilangkan TC)
-          # Kita pakai sed 's|/[^/]*$||' untuk memotong bagian file (.cy.js), menyisakan folder (TS)
+          # 3. LOGIC TEST SUITE (Hanya TS - Tanpa TC)
+          # Kita potong bagian file (.cy.js) agar hanya nama folder (TS) yang muncul
           if [ "$FAILING" -gt 0 ]; then
-            # Tampilkan TS yang gagal saja
             TS_NAME=$(grep -E "│\s+✖" cypress-output.txt | grep -oE "[A-Za-z0-9_-]+/[A-Za-z0-9_/-]+\.cy\.js" | sed 's|/[^/]*$||' | sort -u | sed 's/^/• /')
           else
-            # Tampilkan semua TS yang dijalankan
             TS_NAME=$(grep -oE "[A-Za-z0-9_-]+/[A-Za-z0-9_/-]+\.cy\.js" cypress-output.txt | sed 's|/[^/]*$||' | sort -u | sed 's/^/• /')
           fi
           TS_NAME=${TS_NAME:-"• e2e"}
 
           if [ -f duration.txt ]; then TEST_DURATION=$(cat duration.txt); else TEST_DURATION="N/A"; fi
 
-          # 4. Bagian Detail Fail (Hanya menampilkan TS yang fail tanpa detail TC berlebihan agar rapi)
+          # 4. Bagian Detail Fail (FORMAT: TS / TC)
           FAILED_SECTION=""
           if [ "$FAILING" -gt 0 ]; then
-            # Ambil nama TS saja untuk bagian fail list
-            FAILED_SPECS=$(grep -E "│\s+✖" cypress-output.txt | grep -oE "[A-Za-z0-9_-]+/[A-Za-z0-9_/-]+\.cy\.js" | sed 's|/[^/]*$||' | sort -u)
+            # Ambil nama lengkap (TS/TC.cy.js), lalu ubah format jadi "TS / TC"
+            # sed 's/\.cy\.js$//' untuk hapus .cy.js
+            # sed 's|/| / |g' untuk ganti slash (/) jadi " / "
+            FAILED_SPECS=$(grep -E "│\s+✖" cypress-output.txt | grep -oE "[A-Za-z0-9_-]+/[A-Za-z0-9_/-]+\.cy\.js" | sed 's/\.cy\.js$//; s|/| / |g' | sort -u)
+            
             FAILED_SECTION="**${FAILING} test results failed**"
             if [ -n "$FAILED_SPECS" ]; then
                 while IFS= read -r spec_name; do
@@ -374,24 +375,25 @@ jobs:
             COLOR=3066993 
           fi
 
-          # 3. LOGIC TEST SUITE (PERBAIKAN: Tampilkan TS saja, hilangkan TC)
-          # Kita pakai sed 's|/[^/]*$||' untuk memotong bagian file (.cy.js), menyisakan folder (TS)
+          # 3. LOGIC TEST SUITE (Hanya TS - Tanpa TC)
+          # Kita potong bagian file (.cy.js) agar hanya nama folder (TS) yang muncul
           if [ "$FAILING" -gt 0 ]; then
-            # Tampilkan TS yang gagal saja
             TS_NAME=$(grep -E "│\s+✖" cypress-output.txt | grep -oE "[A-Za-z0-9_-]+/[A-Za-z0-9_/-]+\.cy\.js" | sed 's|/[^/]*$||' | sort -u | sed 's/^/• /')
           else
-            # Tampilkan semua TS yang dijalankan
             TS_NAME=$(grep -oE "[A-Za-z0-9_-]+/[A-Za-z0-9_/-]+\.cy\.js" cypress-output.txt | sed 's|/[^/]*$||' | sort -u | sed 's/^/• /')
           fi
           TS_NAME=${TS_NAME:-"• e2e"}
 
           if [ -f duration.txt ]; then TEST_DURATION=$(cat duration.txt); else TEST_DURATION="N/A"; fi
 
-          # 4. Bagian Detail Fail (Hanya menampilkan TS yang fail tanpa detail TC berlebihan agar rapi)
+          # 4. Bagian Detail Fail (FORMAT: TS / TC)
           FAILED_SECTION=""
           if [ "$FAILING" -gt 0 ]; then
-            # Ambil nama TS saja untuk bagian fail list
-            FAILED_SPECS=$(grep -E "│\s+✖" cypress-output.txt | grep -oE "[A-Za-z0-9_-]+/[A-Za-z0-9_/-]+\.cy\.js" | sed 's|/[^/]*$||' | sort -u)
+            # Ambil nama lengkap (TS/TC.cy.js), lalu ubah format jadi "TS / TC"
+            # sed 's/\.cy\.js$//' untuk hapus .cy.js
+            # sed 's|/| / |g' untuk ganti slash (/) jadi " / "
+            FAILED_SPECS=$(grep -E "│\s+✖" cypress-output.txt | grep -oE "[A-Za-z0-9_-]+/[A-Za-z0-9_/-]+\.cy\.js" | sed 's/\.cy\.js$//; s|/| / |g' | sort -u)
+            
             FAILED_SECTION="**${FAILING} test results failed**"
             if [ -n "$FAILED_SPECS" ]; then
                 while IFS= read -r spec_name; do
