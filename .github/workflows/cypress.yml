@@ -112,6 +112,32 @@ jobs:
         with:
           name: cypress-output
           path: ./
+      
+      # --- TAMBAHKAN STEP INI ---
+      - name: Debug Allure Files
+        run: |
+          echo "Checking folder structure..."
+          ls -la
+          echo "---"
+          if [ -d "allure-results" ]; then
+            echo "✅ Folder allure-results DITEMUKAN."
+            echo "Jumlah file di dalamnya:"
+            ls -1 allure-results | wc -l
+            echo "Daftar file:"
+            ls -la allure-results
+            if [ "$(ls -1 allure-results | wc -l)" -gt 0 ]; then
+               echo "--- Sample File Content (First 20 lines) ---"
+               head -20 allure-results/*.xml
+            else
+               echo "❌ Folder ada tapi KOSONG."
+            fi
+          else
+            echo "❌ Folder allure-results TIDAK DITEMUKAN."
+          fi
+      # -------------------------
+
+      - name: Install Dependencies
+        run: npm ci --omit=dev
 
       - name: Generate Allure Report
         run: |
