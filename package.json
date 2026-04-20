@@ -20,6 +20,7 @@
     "mochawesome-report-generator": "^6.3.2"
   },
   "dependencies": {
+    "fast-xml-parser": "^5.7.1",
     "googleapis": "^171.4.0"
   }
 }
